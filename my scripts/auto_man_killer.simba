@@ -1,377 +1,134 @@
-{$DEFINE SCRIPT_ID := 'a1b2c3d4-5e6f-7g8h-9i0j-k1l2m3n4o5p6'}
-{$UNDEF SCRIPT_REVISION}{$DEFINE SCRIPT_REVISION := '1.0'}
-program AutoManKiller;
-{$I SRL-T/osr.simba}
+{$DEFINE SCRIPT_ID := '574aff7a-4b67-463b-8f89-18a55ee5d613'}
+{$DEFINE SCRIPT_REVISION := '1'}
+
 {$I WaspLib/osr.simba}
 
-type
-  EState = (
-    FIND_TARGET, ATTACK_TARGET, WAIT_COMBAT, 
-    EAT_FOOD, LOOT_DROPS, HANDLE_EMERGENCY, DO_ANTIBAN, 
-    WALK_TO_AREA, END_SCRIPT
-  );
+var
+  duration: Integer = 20;
+  AllCombatStyles: Boolean = True;
 
 type
-  TManKiller = record(TBaseWalkerScript)
-    State: EState;
-    TargetNPC: String;
-    HealthThreshold: Int32;
-    
-    // Timers
-    CombatTimer, LootTimer, AntiBanTimer: TCountDown;
-    
-    // Settings
-    FoodName: String;
-    LootItems: TStringArray;
-    EnableLooting, EnableAntiBan: Boolean;
-    
-    // Combat area
-    CombatArea: TBox;
-    SafeSpot: TPoint;
-    
-    // Statistics
-    KillCount, FoodConsumed, ItemsLooted: Int32;
-    
-    // Methods
-    procedure DoRandomAction();
-    function NeedFood(): Boolean;
-    procedure EatFood();
-    function FindAndAttackMan(): Boolean;
-    procedure CheckForLoot();
-    function InCombat(): Boolean;
-    function WalkToCombatArea(): Boolean;
-    procedure HandleEmergency();
-    function GetState(): EState;
-    procedure Run();
+  TSeagullConfig = record(TScriptForm)
+  durationBox: TLabeledEdit;
+  AllCombat: TLabeledCheckbox;
   end;
 
-var
-  Bot: TManKiller;
-
-// Override Init method properly
-procedure TManKiller.Init(MaxActions: UInt32; MaxTime: UInt64); override;
+procedure TSeagullConfig.StartScript(sender: TObject); override;
 begin
+  duration := StrToInt(Self.durationBox.GetText());
+  AllCombatStyles := self.AllCombat.IsChecked();
   inherited;
-  
-  Self.Name := 'Man Killer Bot';
-  Self.Version := 'v' + {$MACRO SCRIPT_REVISION};
-  
-  // Default settings
-  Self.TargetNPC := 'Man';
-  Self.HealthThreshold := 50;
-  Self.FoodName := 'Bread';
-  Self.LootItems := ['Coins', 'Runes', 'Arrows'];
-  Self.EnableLooting := True;
-  Self.EnableAntiBan := True;
-  
-  // Set combat area (Lumbridge area example - adjust coordinates as needed)
-  Self.CombatArea := [100, 100, 200, 200];
-  Self.SafeSpot := [150, 150];
-  
-  // Initialize timers
-  Self.CombatTimer.Setup(5 * ONE_SECOND);
-  Self.LootTimer.Setup(3 * ONE_SECOND);
-  Self.AntiBanTimer.Setup(2 * ONE_MINUTE);
-  
-  // Initialize stats
-  Self.KillCount := 0;
-  Self.FoodConsumed := 0;
-  Self.ItemsLooted := 0;
-  
-  WriteLn('[ManKiller]: Initialization complete!');
 end;
 
-// Initialize antiban system - simplified for WaspLib
-procedure TManKiller.SetupAntiBan();
-begin
-  // WaspLib handles most antiban automatically via DoAntiban() method
-  WriteLn('[ManKiller]: Antiban system ready');
-end;
+function SetUpScreen() {
+  Self.AddTab('Script Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(tab);
+}
 
-// Random antiban actions - use WaspLib's built-in antiban
-procedure TManKiller.DoRandomAction();
-begin
-  Self.Action := 'Doing antiban';
-  if Self.DoAntiban() then
-    WriteLn('[ManKiller]: Performed antiban action')
-  else
-    Wait(SRL.NormalRange(2000, 5000)); // Brief pause if no antiban performed
-end;
-
-// Check if we need food
-function TManKiller.NeedFood(): Boolean;
-begin
-  Result := Minimap.GetHPLevel() <= Self.HealthThreshold;
-end;
-
-// Eat food from inventory
-procedure TManKiller.EatFood();
-begin
-  if Inventory.ClickItem(Self.FoodName) then
-  begin
-    WriteLn('[ManKiller]: Eating ' + Self.FoodName);
-    Inc(Self.FoodConsumed);
-    Wait(SRL.NormalRange(1800, 2500));
-  end
-  else
-  begin
-    WriteLn('[ManKiller]: No food found! Emergency logout.');
-    Self.State := HANDLE_EMERGENCY;
-  end;
-end;
-
-// Find and click on Man NPC
-function TManKiller.FindAndAttackMan(): Boolean;
+procedure TSeagullConfig.Run(); override;
 var
-  NPCs: TRSNPCArray;
-  NPC: TRSNPC;
-  i: Int32;
+  tab: TTabSheet;
 begin
+  Self.Setup('Seagull Slayer Config');
+  Self.Start.SetOnClick(@Self.StartScript);
+
+  with Self.AllCombat do
+  begin
+    Create(tab);
+    SetCaption('Train all combat styles?');
+    SetLeft(30);
+    SetTop(150);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(AllCombatStyles);
+  end;
+
+  with Self.durationBox do
+  begin
+    Create(tab);
+    SetCaption('Minutes per style:');
+    SetLeft(30);
+    SetTop(180);
+    SetWidth(TControl.AdjustToDPI(200));
+    SetText(ToStr(duration));
+  end;
+
+  inherited;
+end;
+
+function TRSMainscreen.IsInCombat(): Boolean;
+var
+  timer: TCountdown;
+  hits: Integer;
+begin
+  timer.Init(3000);
+  while not timer.IsFinished do
+  begin
+    hits := Length(Mainscreen.FindHitsplats(Mainscreen.GetPlayerBox.Expand(15)));
+    if hits > 0 then Exit(True);
+    if XPBar.EarnedXP then Exit(True);
+  end;
   Result := False;
-  
-  // Look for "Man" NPCs on screen
-  NPCs := MainScreen.GetNPCs();
-  
-  for i := 0 to High(NPCs) do
-  begin
-    NPC := NPCs[i];
-    if NPC.Name = 'Man' then
+  WriteLn('Currently not in combat');
+end;
+
+function TRSNPCV2Array.findNearest(point:TPoint): TRSNPCV2;
+var
+  NPC: TRSNPCV2;
+  dist: Double;
+begin
+  dist := $FFFFFF;
+  for NPC in self do
+    if NPC.Coordinates[0].DistanceTo(point) < dist then
     begin
-      if NPC.Click(['Attack']) then
+      Result := NPC;
+      dist := NPC.Coordinates[0].DistanceTo(point);
+    end;
+end;
+
+var
+  config: TSeagullConfig;
+  npc: TRSNPCV2;
+  npcarr: TRSNPCV2Array;
+  Timerr: TStopwatch;
+  i: Integer;
+begin
+  config.run;
+  map.setupchunks([[[46,51,48,49],[0]]]);
+  npcs.Setup(map.npcs,@map.Walker);
+  npcarr := NPCs.getAll('Man');
+  npc := npcArr.findNearest(map.Position);
+  options.SetNPCAttackOption(ERSAttackOption.ALWAYS_LEFT_CLICK);
+  rsclient.RemoteInput.EnableRealInput;
+  timerr.Start;
+  if AllCombatStyles then
+  begin
+    for i := 0 to 2 do
+    begin
+      case i of
+        0: Combat.SetCombatStyle(COMBAT_STYLE_KICK);
+        1: Combat.SetCombatStyle(COMBAT_STYLE_PUNCH);
+        2: Combat.SetCombatStyle(COMBAT_STYLE_BLOCK);
+      end;
+      Timerr.Reset();
+      while timerr.ElapsedTime < duration*60000 do
       begin
-        WriteLn('[ManKiller]: Attacking Man');
-        Result := True;
-        Self.CombatTimer.Setup(15 * ONE_SECOND);
-        Self.CombatTimer.Restart();
-        Wait(SRL.NormalRange(1500, 2500));
-        Break;
+        WriteLn(timerr.ElapsedTime/60000, '/',duration,' minutes');
+        npc.walkSelectOption(['Attack'], 5);
+        WaitUntil(not Mainscreen.IsInCombat(),50,30000);
       end;
     end;
-  end;
-  
-  if not Result then
-    WriteLn('[ManKiller]: No attackable Man found nearby');
-end;
-
-// Check for loot on ground
-procedure TManKiller.CheckForLoot();
-var
-  GroundItems: TRSGroundItemArray;
-  Item: TRSGroundItem;
-  i, j: Int32;
-begin
-  if not Self.EnableLooting then
-    Exit;
-    
-  GroundItems := MainScreen.GetGroundItems();
-  
-  for i := 0 to High(GroundItems) do
-  begin
-    Item := GroundItems[i];
-    
-    // Check if item is in our loot list
-    for j := 0 to High(Self.LootItems) do
-    begin
-      if Item.Name = Self.LootItems[j] then
-      begin
-        if Inventory.IsFull() then
-        begin
-          WriteLn('[ManKiller]: Inventory full, cannot loot ' + Item.Name);
-          Exit;
-        end;
-        
-        if Item.Click() then
-        begin
-          WriteLn('[ManKiller]: Looting: ' + Item.Name);
-          Inc(Self.ItemsLooted);
-          Wait(SRL.NormalRange(1000, 2000));
-        end;
-        Break;
-      end;
-    end;
-  end;
-end;
-
-// Check if we're in combat - use proper combat detection
-function TManKiller.InCombat(): Boolean;
-begin
-  // Check if player is interacting (in combat animation)
-  Result := Minimap.IsPlayerMoving() or (Minimap.GetHPPercent() < 100);
-  
-  // Additional check: look for combat interface or NPC interaction
-  if not Result then
-    Result := MainScreen.IsUpText(['Attack', 'Fight']);
-end;
-
-// Walk to combat area if not there
-function TManKiller.WalkToCombatArea(): Boolean;
-var
-  MyPos: TPoint;
-begin
-  MyPos := Minimap.Center;
-  
-  if not Self.CombatArea.Contains(MyPos) then
-  begin
-    WriteLn('[ManKiller]: Walking to combat area');
-    Mouse.Click(Self.SafeSpot, MOUSE_LEFT);
-    Minimap.WaitFlag();
-    Result := True;
   end
   else
-    Result := False;
-end;
-
-// Handle emergency situations
-procedure TManKiller.HandleEmergency();
-begin
-  WriteLn('[ManKiller]: Emergency situation - logging out');
-  if Inventory.ClickItem('Varrock teleport') then
   begin
-    Wait(3000);
-    Logout.ClickLogout();
-  end
-  else
-    Logout.ClickLogout();
-  TerminateScript('Emergency logout');
-end;
-
-// Override BuildTextReport for custom stats display
-function TManKiller.BuildTextReport(): TStringArray; override;
-var
-  Runtime: UInt64;
-begin
-  Runtime := Self.TimeRunning.ElapsedTime();
-  
-  Result += '[===============================]';
-  Result += '[ ' + Self.Name + ' ]';
-  Result += '[===============================]';
-  Result += '[ Runtime    : ' + SRL.MsToTime(Runtime, Time_Short) + ' ]';
-  Result += '[ Actions    : ' + ToStr(Self.TotalActions) + ' ]';
-  Result += '[ Kills      : ' + ToStr(Self.KillCount) + ' ]';
-  Result += '[ Food eaten : ' + ToStr(Self.FoodConsumed) + ' ]';
-  Result += '[ Items looted: ' + ToStr(Self.ItemsLooted) + ' ]';
-  Result += '[===============================]';
-end;
-
-// Determine current state
-function TManKiller.GetState(): EState;
-begin
-  // Use WaspLib's built-in should stop check
-  if Self.ShouldStop() then
-    Exit(END_SCRIPT);
-    
-  // Check for emergency (no food and low HP)
-  if Self.NeedFood() and not Inventory.ContainsItem(Self.FoodName) then
-    Exit(HANDLE_EMERGENCY);
-    
-  // Check if we need to eat
-  if Self.NeedFood() then
-    Exit(EAT_FOOD);
-    
-  // Check if we should loot (combat finished and loot timer ready)
-  if Self.LootTimer.IsFinished() and not Self.InCombat() then
-    Exit(LOOT_DROPS);
-    
-  // Check if we're in combat and waiting
-  if Self.InCombat() or not Self.CombatTimer.IsFinished() then
-    Exit(WAIT_COMBAT);
-    
-  // Check if we need to walk to combat area
-  if Self.WalkToCombatArea() then
-    Exit(WALK_TO_AREA);
-    
-  // Random antiban
-  if Self.EnableAntiBan and (Random(100) < 3) then
-    Exit(DO_ANTIBAN);
-    
-  // Default: find and attack target
-  Result := FIND_TARGET;
-end;
-
-// Main execution loop
-procedure TManKiller.Run();
-var
-  StatsTimer: TCountDown;
-begin
-  StatsTimer.Setup(5 * ONE_MINUTE);
-  StatsTimer.Restart();
-  
-  while True do
-  begin
-    Self.State := Self.GetState();
-    
-    case Self.State of
-      FIND_TARGET:
-      begin
-        if Self.FindAndAttackMan() then
-          Inc(Self.KillCount);
-      end;
-      
-      ATTACK_TARGET:
-      begin
-        // This state is handled in FIND_TARGET
-        Wait(1000);
-      end;
-      
-      WAIT_COMBAT:
-      begin
-        Self.Status := 'In combat...';
-        Wait(SRL.NormalRange(1000, 2000));
-      end;
-      
-      EAT_FOOD:
-      begin
-        Self.Status := 'Eating food...';
-        Self.EatFood();
-      end;
-      
-      LOOT_DROPS:
-      begin
-        Self.Status := 'Checking for loot...';
-        Self.CheckForLoot();
-        Self.LootTimer.Restart();
-      end;
-      
-      HANDLE_EMERGENCY:
-      begin
-        Self.HandleEmergency();
-      end;
-      
-      DO_ANTIBAN:
-      begin
-        Self.Status := 'Doing antiban...';
-        Self.DoRandomAction();
-      end;
-      
-      WALK_TO_AREA:
-      begin
-        Self.Status := 'Walking to combat area...';
-        Wait(SRL.NormalRange(2000, 4000));
-      end;
-      
-      END_SCRIPT:
-      begin
-        WriteLn('[ManKiller]: Script stopping...');
-        Break;
-      end;
+    while timerr.ElapsedTime < duration*60000 do
+    begin
+      WriteLn(timerr.ElapsedTime/60000, '/',duration,' minutes');
+      npc.walkSelectOption(['Attack'], 5);
+      WaitUntil(not Mainscreen.IsInCombat(),50,30000);
     end;
-    
-    // Small delay to prevent CPU overuse
-    Wait(SRL.NormalRange(50, 150));
   end;
-  
-  WriteLn('[ManKiller]: Script completed!');
-end;
-
-// Main program execution
-begin
-  WriteLn('=================================');
-  WriteLn('    Auto Man Killer v1.0');
-  WriteLn('    Attacks Man NPCs in OSRS');
-  WriteLn('=================================');
-  WriteLn('');
-  
-  // Initialize and run the bot
-  Bot.Init(0, 4 * ONE_HOUR); // No action limit, 4 hour time limit
-  Bot.Run();
 end.
+
+
+
