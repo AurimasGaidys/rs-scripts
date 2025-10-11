@@ -26,11 +26,6 @@ begin
   Writeln('Destination set to: ', selected);
 end;
 
-procedure FIGHT();
-begin
-  WriteLn(' pew pew');
-end;
-
 procedure TFightConfig.StartScript(sender: TObject); override;
 begin
   SetEnemy();
@@ -63,6 +58,39 @@ begin
 
   inherited;
 end;
+
+
+var
+  npc: TRSNPCV2;
+  npcarr: TRSNPCV2Array;
+
+procedure FIGHT();
+begin
+  npcarr := NPCs.getAll('Man');
+  npc := npcArr.findNearest(map.Position);
+  options.SetNPCAttackOption(ERSAttackOption.ALWAYS_LEFT_CLICK);
+  npc.walkSelectOption(['Attack'], 5);
+    WriteLn(' pew pew');
+  WaitUntil(not Mainscreen.IsInCombat(),50,30000);
+    WriteLn(' pew pew');
+end;
+
+
+
+function TRSNPCV2Array.findNearest(point:TPoint): TRSNPCV2;
+var
+  NPC: TRSNPCV2;
+  dist: Double;
+begin
+  dist := $FFFFFF;
+  for NPC in self do
+    if NPC.Coordinates[0].DistanceTo(point) < dist then
+    begin
+      Result := NPC;
+      dist := NPC.Coordinates[0].DistanceTo(point);
+    end;
+end;
+
 
 begin
   FightConfig.Run();
