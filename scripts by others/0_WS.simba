@@ -1,0 +1,747 @@
+program WealthyCitizen;
+{$I SRL-T/OSR.simba}
+{$I WaspLib/osr.simba}
+{$SCOPEDENUMS OFF}
+begin
+  Login.PlayerIndex := 0;
+end;
+
+type
+  EState = (LEVEL_UP,
+  Pickpocket,
+  HandlePostPickpocket);
+
+ TScript = record
+  State: EState;
+  ABTimeMod:int32;
+  ShutdownTime: Int64;
+  TrueRunTime,ActivityTime, IdealRunTime: TStopwatch;
+  MyPos: TPoint;
+  worldlist: tintegerarray;
+  PurpTextCount:integer;
+  Leo,WC:trsnpcv2;
+  CoinPouch: TRSItem;
+  PickpocketCount,Pickpocket_Limit:integer;
+  CachedBreaksEnabled, CachedSleepsEnabled: Boolean;
+  // -- World Hopping Vars --
+  ENABLEWORLDHOPPING: Boolean;
+  MinWorldHopInterval, MaxWorldHopInterval: Integer;
+  NextWorldHopTime: UInt64;
+  WorldHopsCompleted: Int32;
+ end;
+
+ TScriptGUI = record(TScriptForm)
+    Selector: TLabeledCombobox;
+    EnergyOpt, EnergyQuanOpt,MSCheck, TuftStopOpt,BankTeleItemOpt, BindingNecklaceOpt, StaminaOpt, EssOpt, BankLocation: TLabeledCombobox;
+    BreakCheckBox, SleepCheckBox: TLabeledCheckBox;
+    StopAfterActions, StopAfterTime, BreakAfter, BreakFor, SleepAt, SleepFor: TLabeledEdit;
+    RequirementMemo, ItemsRequired, InstructionsMemo: TLabeledMemo;
+    // -- World Hopping GUI --
+    EnableWorldHoppingCheckBox: TLabeledCheckBox;
+    MinWorldHopIntervalInput, MaxWorldHopIntervalInput: TLabeledEdit;
+  end;
+
+var
+Bot : TScript;
+ScriptGUI: TScriptGUI;
+Config: TConfigJSON;
+
+// Gives a random hop time, e.g., input 3 -> 1-5 mins
+function GetRandomWorldHopTime(): UInt64;
+begin
+  Result := Random(Bot.MinWorldHopInterval, Bot.MaxWorldHopInterval) * 60000;
+end;
+
+function ShouldHopWorld(): Boolean;
+begin
+  if not Bot.ENABLEWORLDHOPPING then Exit(False);
+  if GetTickCount() < Bot.NextWorldHopTime then Exit(False);
+  Result := True;
+end;
+
+procedure DoWorldHop();
+var
+  currentW, targetW: Int32;
+  allW, avail: TIntegerArray;
+  i: Int32;
+begin
+  Wait(Random(3500, 4500));
+  if not Logout.Open() then
+  begin
+    Bot.NextWorldHopTime := GetTickCount() + Random(110000, 130000);
+    Exit;
+  end;
+
+  Logout.GetButton(ERSLogoutButton.WORLD_SWITCHER).Click(MOUSE_LEFT);
+  WaitUntil((currentW := WorldHopper.GetCurrentWorld()) <> 0, 50, 5000);
+
+  allW := Bot.worldlist; // Use the worldlist from the Bot record
+  avail := [];
+  for i := 0 to High(allW) do
+    if allW[i] <> currentW then
+      avail += allW[i];
+
+  if Length(avail) = 0 then
+  begin
+    Bot.ENABLEWORLDHOPPING := False;
+    WriteLn('No alternate worlds left -> disabling hopping');
+    Exit;
+  end;
+
+  targetW := avail[Random(Length(avail))];
+  if WorldHopper.Hop([targetW]) then
+  begin
+    Inc(Bot.WorldHopsCompleted);
+    Bot.NextWorldHopTime := GetTickCount() + GetRandomWorldHopTime();
+    WriteLn('Hopped -> now in world ' + ToStr(targetW) +
+            '  (hops: ' + ToStr(Bot.WorldHopsCompleted) + '). Next in ' +
+            SRL.MsToTime(Bot.NextWorldHopTime - GetTickCount(), Time_Short));
+  end
+  else
+    Bot.NextWorldHopTime := GetTickCount() + Random(110000, 130000);
+end;
+
+
+Function TScriptGUI.BuildComboBox(owner: TControl; caption: String; left, top, width: Integer; defaultIndex: Integer = 0): TLabeledComboBox;
+begin
+  Result.Create(owner);
+  Result.SetCaption(caption);
+  Result.SetLeft(left);
+  Result.SetTop(top);
+  Result.SetStyle(csDropDownList);
+  Result.SetWidth(width);
+  Result.SetItemIndex(defaultIndex);
+end;
+
+Function TScriptGUI.BuildEdit(owner: TControl; caption: String; left, top, width: Integer): TLabeledEdit;
+begin
+  Result.Create(owner);
+  Result.SetCaption(caption);
+  Result.SetLeft(left);
+  Result.SetTop(top);
+  Result.SetWidth(width);
+end;
+
+Function TScriptGUI.BuildCheckBox(owner: TControl; caption: String; left, top: Integer): TLabeledCheckBox;
+begin
+  Result.Create(owner);
+  Result.SetCaption(caption);
+  Result.SetLeft(left);
+  Result.SetTop(top);
+  Result.SetChecked(True);
+end;
+
+Function TScriptGUI.CreateLabeledPanel(owner: TControl; title: String; top, height: Int32; FontSize: Int32 = 10; Color: TColor = clBlack; FontStyles: TFontStyles = [fsBold]): TLabeledPanel;
+var
+  verticalSpacing: Int32;
+begin
+  verticalSpacing := TControl.AdjustToDPI(3);
+  Result.Create(owner);
+  with Result do
+  begin
+    SetCaption(title);
+
+    // Panel properties
+    Panel.SetCaption('');
+    Panel.SetBevelWidth(1);
+    Panel.SetBevelInner(bvNone);
+    Panel.SetBevelOuter(bvNone);
+    Panel.SetLeft(TControl.AdjustToDPI(0));
+    Panel.SetTop(top + verticalSpacing);
+    Panel.SetWidth(Self.Form.GetWidth - TControl.AdjustToDPI(0));
+    Panel.SetHeight(TControl.AdjustToDPI(height));
+    Panel.SetBorderStyle(bsNone);
+
+    // Caption properties
+    Caption.SetLeft(TControl.AdjustToDPI(10));
+    Caption.SetTop(TControl.AdjustToDPI(2));
+    Caption.SetFontSize(FontSize);
+    Caption.SetFontColor(Color);
+    Caption.GetFont().SetStyle(FontStyles);
+  end;
+end;
+
+Function TScriptGUI.GetSelectedString(comboBox: TLabeledComboBox): String;
+begin
+  if comboBox.GetItemIndex() >= 0 then
+    Result := comboBox.ComboBox.getItems().getStrings(comboBox.GetItemIndex())
+  else
+    Result := '';
+end;
+
+procedure TScriptGUI.WorldHoppingCheckboxChanged({$H-} sender: TObject); {$H+}
+begin
+  Self.MinWorldHopIntervalInput.SetVisible(Self.EnableWorldHoppingCheckBox.IsChecked());
+  Self.MaxWorldHopIntervalInput.SetVisible(Self.EnableWorldHoppingCheckBox.IsChecked());
+end;
+
+procedure TScriptGUI.Run(); override;
+var
+  scriptSettingsTab, InstructionsTab: TTabSheet;
+  panelTop: Int32;
+  accountPanel, navigationPanel, antibanPanel: TLabeledPanel;
+  mbmp: TMufasaBitmap;
+
+begin
+
+  Self.Setup('Wealthy Citizen', Point(750, 500));
+
+  Self.Start.setOnClick(@Self.StartScript);
+  Self.Start.getFont.setSize(14);
+  Self.Start.setHeight(TControl.AdjustToDPI(35));
+  Self.Start.getFont.setStyle([fsBold]);
+
+  // Script Settings Tab
+  Self.AddTab('Script Settings');
+  scriptSettingsTab := Self.Tabs[High(Self.Tabs)];
+
+  panelTop := TControl.AdjustToDPI(0);
+
+  // Account Panel
+  accountPanel := Self.CreateLabeledPanel(scriptSettingsTab, 'Account', panelTop, 135);
+  Self.CreateAccountManager(accountPanel.Panel);
+  panelTop := accountPanel.Panel.GetBottom() - TControl.AdjustToDPI(2);
+
+  // Navigation Panel
+  navigationPanel := Self.CreateLabeledPanel(scriptSettingsTab,'', panelTop, 80,,$00FF00);
+  navigationPanel.panel.setfontcolor($00FF00);
+
+
+  panelTop := navigationPanel.Panel.GetBottom() - TControl.AdjustToDPI(2);
+
+  // Antiban Panel
+  antibanPanel := Self.CreateLabeledPanel(scriptSettingsTab, '       Antiban Settings', panelTop, 120,,$FFFFFF);
+  antibanPanel.panel.setfontcolor(clRed);
+
+  Self.StopAfterActions := BuildEdit(antibanPanel.Panel, 'Max actions', TControl.AdjustToDPI(25), TControl.AdjustToDPI(18), TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_MaxActions') then
+    Config.Put('Antiban_MaxActions', '1350');
+  Self.StopAfterActions.SetText(Config.GetString('Antiban_MaxActions'));
+
+
+  Self.StopAfterTime := BuildEdit(antibanPanel.Panel, 'Max time', StopAfterActions.GetRight + TControl.AdjustToDPI(10), StopAfterActions.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_MaxTime') then
+    Config.Put('Antiban_MaxTime', '60');
+  Self.StopAfterTime.SetText(Config.GetString('Antiban_MaxTime'));
+
+  Self.BreakAfter := BuildEdit(antibanPanel.Panel, 'Break After', StopAfterTime.GetRight + TControl.AdjustToDPI(10), StopAfterTime.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_BreakAfter') then
+    Config.Put('Antiban_BreakAfter', '30');
+  Self.BreakAfter.SetText(Config.GetString('Antiban_BreakAfter'));
+
+  Self.BreakFor := BuildEdit(antibanPanel.Panel, 'Break For', BreakAfter.GetRight + TControl.AdjustToDPI(10), BreakAfter.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_BreakFor') then
+    Config.Put('Antiban_BreakFor', '5');
+  Self.BreakFor.SetText(Config.GetString('Antiban_BreakFor'));
+
+  Self.SleepAt := BuildEdit(antibanPanel.Panel, 'Sleep At', BreakFor.GetRight + TControl.AdjustToDPI(10), BreakFor.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_SleepAt') then
+    Config.Put('Antiban_SleepAt', '22:00:00');
+  Self.SleepAt.SetText(Config.GetString('Antiban_SleepAt'));
+
+  Self.SleepFor := BuildEdit(antibanPanel.Panel, 'Sleep For', SleepAt.GetRight + TControl.AdjustToDPI(10), SleepAt.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_SleepFor') then
+    Config.Put('Antiban_SleepFor', '9.0');
+  Self.SleepFor.SetText(Config.GetString('Antiban_SleepFor'));
+
+  Self.BreakCheckBox := BuildCheckBox(antibanPanel.Panel, 'Breaks', SleepFor.GetRight + TControl.AdjustToDPI(10), SleepFor.GetTop + TControl.AdjustToDPI(10));
+  Self.BreakCheckBox.SetChecked(StrToBoolDef(Config.GetString('Antiban_BreaksEnabled'), True));
+
+  Self.SleepCheckBox := BuildCheckBox(antibanPanel.Panel, 'Sleeps', BreakCheckBox.GetLeft, BreakCheckBox.GetBottom);
+  Self.SleepCheckBox.SetChecked(StrToBoolDef(Config.GetString('Antiban_SleepsEnabled'), False));
+
+  // -- New World Hopper GUI --
+  Self.EnableWorldHoppingCheckBox := Self.BuildCheckBox(antibanPanel.Panel, 'World Hop', Self.StopAfterActions.GetLeft, Self.StopAfterActions.GetBottom + TControl.AdjustToDPI(15));
+  if not Config.Has('Antiban_WorldHoppingEnabled') then
+    Config.Put('Antiban_WorldHoppingEnabled', 'False');
+  Self.EnableWorldHoppingCheckBox.SetChecked(StrToBoolDef(Config.GetString('Antiban_WorldHoppingEnabled'), False));
+  Self.EnableWorldHoppingCheckBox.CheckBox.SetOnChange(@Self.WorldHoppingCheckboxChanged);
+
+  Self.MinWorldHopIntervalInput := Self.BuildEdit(antibanPanel.Panel, 'Min Hop (mins)', Self.EnableWorldHoppingCheckBox.GetRight + TControl.AdjustToDPI(5), Self.EnableWorldHoppingCheckBox.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_MinWorldHopInterval') then
+    Config.Put('Antiban_MinWorldHopInterval', '5');
+  Self.MinWorldHopIntervalInput.SetText(Config.GetString('Antiban_MinWorldHopInterval'));
+  Self.MinWorldHopIntervalInput.Edit.SetOnKeyPress(@Self.MinWorldHopIntervalInput.Edit.NumberField);
+  Self.MinWorldHopIntervalInput.SetVisible(Self.EnableWorldHoppingCheckBox.IsChecked());
+
+  Self.MaxWorldHopIntervalInput := Self.BuildEdit(antibanPanel.Panel, 'Max Hop (mins)', Self.MinWorldHopIntervalInput.GetRight + TControl.AdjustToDPI(5), Self.MinWorldHopIntervalInput.GetTop, TControl.AdjustToDPI(90));
+  if not Config.Has('Antiban_MaxWorldHopInterval') then
+    Config.Put('Antiban_MaxWorldHopInterval', '15');
+  Self.MaxWorldHopIntervalInput.SetText(Config.GetString('Antiban_MaxWorldHopInterval'));
+  Self.MaxWorldHopIntervalInput.Edit.SetOnKeyPress(@Self.MaxWorldHopIntervalInput.Edit.NumberField);
+  Self.MaxWorldHopIntervalInput.SetVisible(Self.EnableWorldHoppingCheckBox.IsChecked());
+
+  panelTop := antibanPanel.Panel.GetBottom() - TControl.AdjustToDPI(10);
+
+
+  inherited;
+end;
+
+procedure TScriptGUI.StartScript(sender: TObject); override;
+begin
+  inherited;
+
+  try
+    // Store enum settings
+
+    // Save human readable names to config.ini instead of enum values
+
+    Bot.CachedBreaksEnabled := Self.BreakCheckBox.IsChecked();
+    Bot.CachedSleepsEnabled := Self.SleepCheckBox.IsChecked();
+    Bot.ENABLEWORLDHOPPING := Self.EnableWorldHoppingCheckBox.IsChecked();
+    Bot.MinWorldHopInterval := StrToIntDef(Self.MinWorldHopIntervalInput.GetText(), 5);
+    Bot.MaxWorldHopInterval := StrToIntDef(Self.MaxWorldHopIntervalInput.GetText(), 15);
+
+    Config.Put('Antiban_WorldHoppingEnabled', ToStr(Bot.ENABLEWORLDHOPPING));
+    Config.Put('Antiban_MinWorldHopInterval', ToStr(Bot.MinWorldHopInterval));
+    Config.Put('Antiban_MaxWorldHopInterval', ToStr(Bot.MaxWorldHopInterval));
+    Config.Put('Antiban_BreaksEnabled', ToStr(Bot.CachedBreaksEnabled));
+    Config.Put('Antiban_SleepsEnabled', ToStr(Bot.CachedSleepsEnabled));
+    Config.Put('Antiban_MaxActions', Self.StopAfterActions.GetText());
+    Config.Put('Antiban_MaxTime', Self.StopAfterTime.GetText());
+    Config.Put('Antiban_BreakAfter', Self.BreakAfter.GetText());
+    Config.Put('Antiban_BreakFor', Self.BreakFor.GetText());
+    Config.Put('Antiban_SleepAt', Self.SleepAt.GetText());
+    Config.Put('Antiban_SleepFor', Self.SleepFor.GetText());
+
+    // Antiban and other settings
+
+    // Store and add antiban break if enabled
+    if Bot.CachedBreaksEnabled then
+      Antiban.AddBreak(
+        StrToIntDef(Self.BreakAfter.GetText(), 60) * ONE_MINUTE,
+        StrToIntDef(Self.BreakFor.GetText(), 15) * ONE_MINUTE
+      );
+
+    // Store and add sleep if enabled
+    if Bot.CachedSleepsEnabled then
+      Antiban.AddSleep(
+        Self.SleepAt.GetText(),
+        StrToFloatDef(Self.SleepFor.GetText(), 7.0) * ONE_HOUR
+      );
+
+    // Verify settings were saved
+    WriteLn('Settings saved:');
+    WriteLn('Breaks Enabled: ', ToStr(Bot.CachedBreaksEnabled));
+    WriteLn('Sleeps Enabled: ', ToStr(Bot.CachedSleepsEnabled));
+    WriteLn('World Hopping: ', ToStr(Bot.ENABLEWORLDHOPPING));
+    writeln('Max Action: ', Self.StopAfterActions.GetText());
+    writeln('Max Time', Self.StopAfterTime.GetText());
+
+
+
+  except
+    WriteLn('[Error] StartScript: ', GetExceptionMessage());
+  end;
+end;
+
+procedure TAntiban.SetupBreaks(); override;
+begin
+  if Self.Breaks <> [] then
+    Exit;
+
+  Self.AddBreak(StrToIntDef(Config.GetString('Antiban_BreakAfter'), 60) * ONE_MINUTE,StrToIntDef(Config.GetString('Antiban_BreakFor'), 15) * ONE_MINUTE);
+
+  Self.OnBreaking := @OnBreakingTask;
+end;
+
+procedure TAntiban.SetupSleep(); override;
+begin
+  if Self.Sleeps <> [] then
+    Exit;
+
+  Self.AddSleep(Config.GetString('Antiban_SleepAt'),StrToFloatDef(Config.GetString('Antiban_SleepFor'), 7.0) * ONE_HOUR);
+  Self.OnSleeping := @OnSleepingTask;
+end;
+
+procedure TAntiban.Setup(); override;
+begin
+  // Set up mouse behavior
+  Mouse.Speed      := 35 + Self.GetBehavior(EBioBehavior.MOUSE_SPEED);
+  Mouse.Gravity    := 9  + Round(Self.GetBehavior(EBioBehavior.MOUSE_GRAVITY) / 2);
+  Mouse.Wind       := 3  + Round(Self.GetBehavior(EBioBehavior.MOUSE_WIND) / 2);
+  Mouse.MissChance := Self.GetBehavior(EBioBehavior.MOUSE_MISS);
+
+  // Cache the break and sleep settings
+  Bot.CachedBreaksEnabled := StrToBoolDef(Config.GetString('Antiban_BreaksEnabled'), False);
+  Bot.CachedSleepsEnabled := StrToBoolDef(Config.GetString('Antiban_SleepsEnabled'), False);
+
+  if Bot.CachedBreaksEnabled then
+    Self.SetupBreaks();
+
+  if Bot.CachedSleepsEnabled then
+    Self.SetupSleep();
+
+  // Adjust zoom if necessary
+  if not InRange(MM2MS.GetZoomLevel(), Self.MinZoom, Self.MaxZoom) then
+    Self.AdjustZoom();
+end;
+
+procedure TAntiban.BioClick(button: Int32; {$H-}max: Int32 = 3){$H+}; override;
+begin
+  Mouse.Click(button);
+end;
+
+procedure TScript.DoAntiban();
+begin
+  if GetTimeRunning() > Self.ShutdownTime then
+    TerminateScript('Time to shutdown, game time greater than shutdown time at antiban');
+
+  ActivityTime.Pause();
+
+  if ShouldHopWorld() then
+    DoWorldHop();
+
+  //Self.TrueRunTime.Pause();
+  antiban.doantiban(true,true);
+
+  if (not RSClient.IsLoggedIn) then begin
+    if length(self.worldlist)>0 then
+      login.switchtoworld(self.worldlist[Random(0, high(self.worldlist))]);
+    Login.LoginPlayer();
+  end;
+
+  //Self.TrueRunTime.Resume();
+  ActivityTime.Resume();
+end;
+
+procedure TScript.SetupAntiban();
+begin
+
+  Antiban.AddTask((ONE_MINUTE*1.5)*Self.ABTimeMod,  @antiban.randomrotate);
+  Antiban.AddTask((ONE_MINUTE*1)*Self.ABTimeMod,  @antiban.randommouse);
+  Antiban.AddTask((ONE_MINUTE*2)*Self.ABTimeMod,  @antiban.RandomRightClick);
+  Antiban.AddTask((ONE_MINUTE*4)*Self.ABTimeMod,  @antiban.HoverSkills);
+  Antiban.AddTask((ONE_MINUTE*6)*Self.ABTimeMod,  @antiban.HoverMSItems);
+  Antiban.AddTask((ONE_MINUTE*8)*Self.ABTimeMod,  @antiban.hovermsnpcs);
+  Antiban.AddTask((ONE_MINUTE*10)*Self.ABTimeMod,  @antiban.RandomTab);
+end;
+
+procedure TScript.WriteMsg(Message: String);
+begin
+  WriteLn(SRL.TimeStamp() + '[Bot]: '+Message);
+end;
+
+Function LoginIfNot(): Boolean;
+begin
+  if not RSClient.IsLoggedIn() then
+  begin
+    if not Login.LoginPlayer() then
+    begin
+      TerminateScript("Could not log in player");
+    end
+    else
+      Result := True;
+  end;
+end;
+
+procedure TScript.Report();
+var
+RunTime: Int64;
+Thiefexp: Int64;
+begin
+
+  RunTime  := Self.TrueRunTime.ElapsedTime();
+
+  Thiefexp := XPBar.TotalEarnedXP(true);
+  WriteLn('|======================================|');
+  WriteLn('|=-= ~ Wealthy Citizen by Kriptic ~ =-=|');
+  WriteLn('|======================================|');
+  WriteLn(padR('| Runtime: ' + SRL.MsToTime(RunTime, Time_Short), 39, ' ') + '|');
+  WriteLn(padR('| Coin bags obtained: ' + IntToStr(self.PickpocketCount), 39, ' ') + '|');
+  WriteLn(padR('| CoinBags/Hr: ' + IntToStr(Round(self.PickpocketCount / (RunTime / 3600000))), 39, ' ') + '|');
+  WriteLn(padR('| Exp Earned: ' + IntToStr(Round(Thiefexp)), 39, ' ') + '|');
+  WriteLn(padR('| Exp/Hr: ' + IntToStr(Round(Thiefexp / (RunTime / 3600000))), 39, ' ') + '|');
+  if Self.ENABLEWORLDHOPPING then
+  begin
+    WriteLn(padR('| Hops completed: ' + ToStr(Self.WorldHopsCompleted), 39, ' ') + '|');
+    if Self.NextWorldHopTime > GetTickCount() then
+      WriteLn(padR('| Next world hop in: ' + SRL.MsToTime(Self.NextWorldHopTime - GetTickCount(), Time_Short), 39, ' ') + '|')
+    else
+      WriteLn(padR('| Next world hop: Pending...', 39, ' ') + '|');
+  end;
+  if Self.CachedBreaksEnabled then
+    WriteLn(padR('| Next break: ' + SRL.MsToTime(Max(0, Round(Antiban.Breaks[0].NextAtTime - RunTime)), Time_Short), 39, ' ') + '|');
+  if Self.CachedSleepsEnabled then
+    WriteLn(padR('| Next sleep: ' + SRL.MsToTime(Max(0, Round(Antiban.Sleeps[0].NextAtTime - RunTime)), Time_Short), 39, ' ') + '|');
+    WriteLn(padR('| Shutdown: ' + ToStr(SRL.MsToTime(Self.ShutdownTime - GetTimeRunning, Time_Short)), 39, ' ') + '|');
+  WriteLn('|======================================|');
+  WriteLn('|-=-=-=-  ~ Kriptics Scripts ~  -=-=-=-|');
+  WriteLn('|======================================|');
+end;
+
+procedure Tscript.RotateWithinAngles(min, max: Int32);
+var
+  minMaxAvg: Int32 := Floor((min + max) div 2);
+  preferredAngle: Int32 := SRL.SkewedRand(minMaxAvg, min, max);
+begin
+  if preferredAngle < 0 then
+    preferredAngle := preferredAngle + 360;
+
+  if InRange(Minimap.getCompassAngle(True), min, max) then
+    Exit;
+  Minimap.SetCompassAngle(preferredAngle);
+end;
+
+procedure Debug(objs: TRSObjectV2Array); overload;
+var
+  bitmap: TMufasaBitmap;
+  i: Integer;
+begin
+  bitmap.FromClient();
+
+  for i := Low(objs) to High(objs) do
+  begin
+    objs[i]._DrawRouter(bitmap);
+  end;
+
+  DisplayDebugImgWindow(bitmap.getWidth(), bitmap.getHeight());
+  DrawBitmapDebugImg(bitmap);
+  bitmap.Free();
+end;
+
+function TRSChat.LowestLineWith(sa: TStringArray; colors: TIntegerArray = [CHAT_COLOR_BLACK]): Integer;
+var i: Integer;
+begin
+  Result := 8;
+  for i := 7 downto 0 do
+    if not Chat.GetMessage(i, colors).ContainsAny(sa) then Exit(i);
+end;
+
+procedure TScript.CheckChat();
+begin
+  Self.PurpTextCount := Chat.LowestLineWith(['urchi', 'distr', 'citizen'], [CHAT_COLOR_PURPLE]);
+
+end;
+
+Procedure Tscript.HandleCoinPouch();
+var
+  pouchCount: Int32;
+begin
+  if not inventory.IsOpen() then Inventory.Open();
+  pouchCount := Inventory.CountItemStack(Self.CoinPouch);
+  self.OpenCoinPouch();
+  Wait(900,1300);
+  if not inventory.containsItem(self.CoinPouch) then begin
+    self.PickpocketCount:=self.PickpocketCount+pouchCount;
+    self.report;
+    activitytime.reset;
+    self.doantiban;
+  end;
+end;
+
+Procedure Tscript.OpenCoinPouch();
+begin
+  if not inventory.IsOpen() then Inventory.Open();
+  Inventory.ClickItem(Self.CoinPouch);
+  Wait(900,1300);
+  //if not inventory.containsItem(self.CoinPouch) then self.ShouldOpenCoinPouches := False;
+end;
+
+Procedure Tscript.PickpocketWC();
+var
+atpa: T2DPointArray;
+begin
+    xpbar.earnedxp;
+    if wc.selectoption(['Pickpocket'],2) then begin
+      wait(300,500);
+      waituntil(not xpbar.earnedxp,5000,40000);
+      waituntil(not wc.find(atpa),3000,10000);
+    end;
+    wait(300,500);
+end;
+
+procedure TScript.SetupWorldHopping();
+begin
+  if not Self.ENABLEWORLDHOPPING then Exit;
+  if Length(Self.worldlist) < 2 then
+  begin
+    WriteLn('ERROR: World hopping is enabled but fewer than 2 worlds configured!');
+    if RSClient.IsLoggedIn then Logout.ClickLogout();
+    TerminateScript('World hopping requires >= 2 worlds');
+  end;
+  Self.NextWorldHopTime := GetTickCount() + GetRandomWorldHopTime();
+  Self.WorldHopsCompleted := 0;
+end;
+
+procedure Tscript.init();
+var
+  z: Int32;
+begin
+  ClearDebug();
+  RSClient.Image.Clear();
+  writeln(SRL.TimeStamp(), 'Initializing');
+  if (not RSClient.IsLoggedIn()) then
+    Login.LoginPlayer();
+  Mouse.Speed              := random(30,35);
+  Mouse.Gravity            := random(15, 20);
+  Mouse.MissChance         := 0;
+  Mouse.Wind               := random(0, 2);
+  Mouse.Distribution       := MOUSE_DISTRIBUTION_GAUSS;
+
+  xpbar.setup;
+  XPBar.EarnedXP;
+  xpbar.totalearnedxp(true);
+
+  WL.GameSettings.MouseWheel         := False;
+
+  Antiban.MinZoom := 40;
+  Antiban.MaxZoom := 45;
+  Antiban.Skills  := [ERSSkill.THIEVING, ERSSkill.TOTAL];
+  ABTimeMod       := Random(1,3);
+
+  Self.Pickpocket_Limit:= StrToInt(Config.GetString('Antiban_MaxActions'));
+  Self.ShutdownTime:= StrToInt(Config.GetString('Antiban_MaxTime'))* ONE_MINUTE;
+
+  Self.SetupAntiban();
+
+  ActivityTime.Start();
+  Self.TrueRunTime.Start();
+  Self.IdealRunTime.Start();
+
+  Self.worldlist := login.getplayer.worlds;
+
+  Combat.SetAutoRetaliate(False);
+
+  z := Options.GetZoomLevel();
+  if (not InRange(z, 40, 45)) then
+    Options.SetZoomLevel(SRL.TruncatedGauss(40,45))
+  else
+    MM2MS.ZoomLevel := z;
+  Options.SetMaxBrightness();
+  Options.SetNPCAttackOption(ERSAttackOption.HIDDEN);
+
+  GENERATED_GRAPH.Spacing:=10;
+  GENERATED_GRAPH.noderadius:=30;
+
+  map.setupchunks([[[24,50,27,47],[0]]]);
+  Objects.Setup(Map.Objects, @Map.Walker);
+  NPCs.Setup(Map.NPCs, @Map.Walker);
+  Map.Loader.Graph.UseCollisionData := true;
+  Map.sample.amount := 10;
+
+  Stats.Setup();
+  CoinPouch := 'Coin pouch';
+  Leo.SetupCoordinates([15], [[2624,38006]]);
+  Leo.Size := [0.8, 0.8, 4.9];
+  Leo.SetupUpText('Leo');
+  Leo.Finder.Colors:=[CTS2(2047821, 6, 0.14, 0.41)];
+  Leo.Walker := @Map.Walker;
+
+  WC.setupcoordinates([15],[[2624,38006]]);
+  WC.size := [0.8,0.8,4.9];
+  WC.SetupUpText('ealthy');
+  WC.finder.colors:= [CTS2(6211557, 11, 0.04, 1.38)];
+  WC.DotFilters := [];
+  WC.dotfilters.setupbounds([[2612,37990], [2636,37990], [2636,38014], [2612,38014]],true);
+  WC.Walker := @Map.Walker;
+
+  if inventory.containsitem(self.coinpouch) then
+    self.OpenCoinPouch;
+  PickpocketCount:=Inventory.CountItemStack(Self.CoinPouch);
+
+  Self.SetupWorldHopping();
+end;
+
+function TScript.GetState(): EState;
+var
+atpa: T2DPointArray;
+begin
+  RSClient.Image.Clear();
+
+  if ActivityTime.elapsedTime > 300000 then
+    Terminatescript('Inactivity detected');
+
+  if Chat.LeveledUp() then
+    Exit(EState.LEVEL_UP);
+
+  if RSInterface.IsOpen() then
+  begin
+    if Bank.IsOpen() then
+    begin
+      //if inventory.containsany(DepositList) then
+      //  bank.deposititems(DepositList,True);
+
+      //if Inventory.ContainsRandomItems(notDeposit) then
+      //  Bank.DepositRandomItems(notDeposit);
+
+      //if self.CheckItemRequirements then begin
+      //  Self.ForceResupply:= false;
+
+    end;
+    Bank.Close(True);
+  end;
+
+  MyPos := Map.position;
+
+
+
+  if wc.find(atpa) then begin
+    if not minimap.gethppercent < 90 then
+      Exit(Estate.Pickpocket);
+  end;
+
+  if inventory.containsany([CoinPouch]) then begin
+    Exit(Estate.HandlePostPickpocket);
+  end;
+
+  if not mypos.inbox([2620,37998,2632,38010]) then begin
+    try map.walker.webwalk([2624,38002],8)
+    except map.walker.walkblind([2624,38002],8);
+    end
+  end;
+
+
+
+end;
+
+procedure Tscript.run()
+begin
+  repeat
+    LoginIfNot();
+
+
+    Self.State := Self.GetState();
+    //writeln(SRL.TimeStamp(),"Current state :", self.getstate);
+    case Self.State of
+      EState.LEVEL_UP: Chat.HandleLevelUp();
+      Estate.Pickpocket:self.PickpocketWC;
+      Estate.HandlePostPickpocket:self.handlecoinpouch;
+    end;
+  until (Self.PickpocketCount >= Self.Pickpocket_Limit);
+  Logout.ClickLogout();
+
+end;
+
+begin
+  Config.Setup(AppPath + 'Configs' + DirectorySeparator + 'WC.json');
+
+  ScriptGUI.Run();
+  Bot.Init();
+  Bot.Run();
+end.
+
+
+
+
+
+   CTS2(9537, 1, 0.08, 0.01)// anchor
+
+   CTS2(2047821, 6, 0.14, 0.41)//leo
+
+
+   red wc
+   CTS2(475990, 8, 0.08, 1.97)//hair
+   CTS2(6211557, 11, 0.04, 1.38)//gold
+   CTS2(3817867, 11, 0.03, 0.09)//cloth
+
+   gold wc
+   CTS2(4424607, 6, 0.04, 0.15)//hair
+   CTS2(6245188, 12, 0.13, 0.13)//cloth
+   CTS2(6211557, 11, 0.04, 1.38)//gold
+
+   blue npc
+   CTS2(1776416, 1, 0.01, 0.01)//hair
+   CTS2(6211557, 11, 0.04, 1.38)//gold
+   CTS2(6968140, 11, 0.10, 0.09)//cloth
+

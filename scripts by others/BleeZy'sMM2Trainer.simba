@@ -1,0 +1,536 @@
+{$DEFINE SCRIPT_ID := 'f8e2a7c4-1b3d-4f9e-8a5c-2d6f7b8e9c1a'}
+{$UNDEF SCRIPT_REVISION}{$DEFINE SCRIPT_REVISION := '35'}
+program BleeZysMM2Trainer;
+{$I SRL-T/OSR.simba}
+{$I WaspLib/osr.simba}
+
+begin
+  Login.PlayerIndex := 0;
+end;
+
+type
+  EState = (
+    LOGIN_PLAYER, CHECK_PRAYER, DRINK_POTIONS, RESET_AGGRO,
+    DO_ANTIBAN, HANDLE_EMERGENCY, END_SCRIPT
+  );
+
+type
+  TScript = record
+    State: EState;
+    Version, Status, TaskMode: String;
+    PrayerThreshold, AggroResetMinutes, CriticalPrayer, StartExp, MagicGained: Int32;
+    MovementPoints: array[0..1] of TPoint;
+    AggroTimer, PrayerTimer, ProgressTimer: TCountDown;
+    RuntimeTimer: TStopwatch;
+    EnableAggroReset, EnablePrayerPotions, TakeBreaks, TakeSleeps: Boolean;
+    ShutdownTime: Int64;
+    PrayerPotions: TRSItemArray;
+    EmergencyItem: String;
+  end;
+
+const
+  PPOTS: TStringArray = ['Prayer potion(1)', 'Prayer potion(2)', 'Prayer potion(3)', 'Prayer potion(4)'];
+
+var
+  Bot : TScript;
+  GUI: TScriptForm;
+
+procedure TScript.WriteMsg(Message: String);
+begin
+  WriteLn('[MM2]: '+Message);
+end;
+
+procedure TScriptForm.StartScript(sender: TObject); override;
+var
+  MaxRun, PrayerThresh, AggroMins: Int32;
+  e_Run, e_Prayer, e_Aggro, e_BA, e_BF, e_SA, e_SF: TEdit;
+  cb_Breaks, cb_Sleeps, cb_Prayer, cb_Aggro: TCheckBox;
+begin
+  inherited;
+
+  Self.Form.Close();
+  Bot.WriteMsg('Starting burster');
+
+  cb_Prayer := Self.Form.GetChild('cb_prayer_checkbox');
+  Bot.EnablePrayerPotions := cb_Prayer.IsChecked;
+
+  e_Prayer := Self.Form.GetChild('box_prayer_edit');
+  PrayerThresh := StrToInt(e_Prayer.getText());
+  Bot.PrayerThreshold := PrayerThresh;
+
+  cb_Aggro := Self.Form.GetChild('cb_aggro_checkbox');
+  Bot.EnableAggroReset := cb_Aggro.IsChecked;
+
+  e_Aggro := Self.Form.GetChild('box_aggro_edit');
+  AggroMins := StrToInt(e_Aggro.getText());
+  Bot.AggroResetMinutes := AggroMins;
+
+  e_Run := Self.Form.GetChild('box_run_edit');
+  MaxRun := StrToInt(e_Run.getText());
+  Bot.ShutdownTime := (MaxRun * 60000) + Random(- (MaxRun * 6000), (MaxRun * 6000));
+
+  cb_Breaks := Self.Form.GetChild('cb_breaks_checkbox');
+  Bot.TakeBreaks := cb_Breaks.IsChecked;
+  if Bot.TakeBreaks then
+  begin
+    e_BA := Self.Form.GetChild('box_ba_edit');
+    e_BF := Self.Form.GetChild('box_bf_edit');
+    Antiban.AddBreak(ONE_MINUTE*StrToInt(e_BA.getText()),ONE_MINUTE*StrToInt(e_BF.getText()), 0.15, 1.0);
+  end;
+
+  cb_Sleeps := Self.Form.GetChild('cb_sleeps_checkbox');
+  Bot.TakeSleeps := cb_Sleeps.IsChecked;
+  if Bot.TakeSleeps then
+  begin
+    e_SA := Self.Form.GetChild('box_sa_edit');
+    e_SF := Self.Form.GetChild('box_sf_edit');
+    Antiban.AddSleep(e_SA.getText(), StrToInt(e_SF.getText()) * ONE_HOUR, 0.1, 1.0);
+  end;
+
+  Bot.TaskMode := 'Bursting';
+end;
+
+function TScriptForm.CreateSettingsTab(): TTabSheet;
+var
+  lb_Time, lb_Script: TLabel;
+  cb_Breaks, cb_Sleeps, cb_Prayer, cb_Aggro: TLabeledCheckBox;
+  box_Run, box_Prayer, box_Aggro, box_BA, box_BF, box_SA, box_SF: TLabeledEdit;
+begin
+  Result.Init(nil);
+  Result.SetCaption('Script settings');
+  Result.SetName('Settings_Tab');
+
+  with lb_Time do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(10));
+    SetFontColor($000000);
+    GetFont().SetSize(14);
+    GetFont().SetStyle([fsBold]);
+    SetCaption('Time Management');
+  end;
+
+  with cb_Breaks do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(40));
+    SetName('cb_breaks');
+    SetCaption('Enable Breaks');
+    SetFontColor($000000);
+    SetChecked(False);
+  end;
+
+  with box_BA do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(70));
+    SetName('box_ba');
+    SetCaption('Break After (minutes)');
+    SetToolTip('Take a break after this many minutes of running');
+    SetText('60');
+    SetFontColor($000000);
+  end;
+
+  with box_BF do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(180));
+    SetTop(TControl.AdjustToDPI(70));
+    SetName('box_bf');
+    SetCaption('Break For (minutes)');
+    SetToolTip('Length of break in minutes');
+    SetText('15');
+    SetFontColor($000000);
+  end;
+
+  with cb_Sleeps do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(130));
+    SetName('cb_sleeps');
+    SetCaption('Enable Sleep Schedule');
+    SetFontColor($000000);
+    SetChecked(False);
+  end;
+
+  with box_SA do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(160));
+    SetName('box_sa');
+    SetCaption('Sleep At (24hr format)');
+    SetToolTip('Time to sleep (example: 23:30:00)');
+    SetText('23:00:00');
+    SetFontColor($000000);
+  end;
+
+  with box_SF do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(200));
+    SetTop(TControl.AdjustToDPI(160));
+    SetName('box_sf');
+    SetCaption('Sleep For (hours)');
+    SetToolTip('How many hours to sleep');
+    SetText('8');
+    SetFontColor($000000);
+  end;
+
+  with box_Run do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(220));
+    SetName('box_run');
+    SetCaption('Max Runtime (minutes)');
+    SetToolTip('Total script runtime in minutes (0 = unlimited)');
+    SetText('180');
+    SetFontColor($000000);
+  end;
+
+  with lb_Script do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(400));
+    SetTop(TControl.AdjustToDPI(10));
+    SetFontColor($000000);
+    GetFont().SetSize(14);
+    GetFont().SetStyle([fsBold]);
+    SetCaption('Training Settings');
+  end;
+
+  with cb_Prayer do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(400));
+    SetTop(TControl.AdjustToDPI(40));
+    SetName('cb_prayer');
+    SetCaption('Auto Prayer Potions');
+    SetFontColor($000000);
+    SetChecked(True);
+    SetToolTip('Automatically drink prayer potions when low');
+  end;
+
+  with box_Prayer do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(400));
+    SetTop(TControl.AdjustToDPI(70));
+    SetName('box_prayer');
+    SetCaption('Prayer Threshold');
+    SetToolTip('Drink potions when prayer drops to this level');
+    SetText('20');
+    SetFontColor($000000);
+  end;
+
+  with cb_Aggro do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(400));
+    SetTop(TControl.AdjustToDPI(130));
+    SetName('cb_aggro');
+    SetCaption('Auto Aggro Reset');
+    SetFontColor($000000);
+    SetChecked(True);
+    SetToolTip('Automatically reset monster aggression');
+  end;
+
+  with box_Aggro do
+  begin
+    Create(Result);
+    SetLeft(TControl.AdjustToDPI(400));
+    SetTop(TControl.AdjustToDPI(160));
+    SetName('box_aggro');
+    SetCaption('Reset Every (minutes)');
+    SetToolTip('How often to reset aggro in minutes');
+    SetText('10');
+    SetFontColor($000000);
+  end;
+end;
+
+procedure TScriptForm.Setup(caption: String = 'Script Form'; size: TPoint = [750, 500]; allowResize: Boolean = False); override;
+var
+  SButton: TButton;
+begin
+  inherited;
+
+  Self.Start.setVisible(False);
+  with SButton do
+  begin
+    Create(Self.Form);
+    SetBounds(Self.Form.GetRight-190, Self.Form.GetBottom-70, 180, 60);
+    GetFont.SetName('Bahnschrift');
+    GetFont.SetSize(15);
+    SetCaption('Start Training');
+    SetOnClick(@Self.StartScript);
+  end;
+
+  Self.AddTab(CreateSettingsTab());
+  Self.CreateAPISettings();
+  Self.CreateAccountManager();
+end;
+
+procedure TScript.DoLoseFocus();
+var T: Int32;
+begin
+  T := SRL.NormalRange(1700,8000);
+  Self.WriteMsg('Losing focus for '+SRL.MsToTime(T, Time_Short));
+  Antiban.LoseFocus(T);
+end;
+
+procedure TScript.DoAntiban();
+begin
+  if GetTimeRunning() > Self.ShutdownTime then
+    TerminateScript('Time to shutdown');
+
+  Self.RuntimeTimer.Pause();
+  Antiban.DoAntiban();
+  Self.RuntimeTimer.Resume();
+end;
+
+procedure TScript.stats();
+var
+  xp: Int64;
+  h: Double;
+begin
+  xp := XpBar.Read() - Self.StartExp;
+  h := Self.RuntimeTimer.ElapsedTime / 3600000;
+  WriteLn('Runtime: ', SRL.MsToTime(GetTimeRunning, Time_Short));
+  WriteLn('XP: ', Round(xp / 1000), 'k (', Round((xp / h) / 1000), 'k/hr)');
+end;
+
+procedure TScript.SetupAntiban();
+begin
+  Antiban.AddTask(ONE_MINUTE*2, @Mouse.RandomMovement);
+  Antiban.AddTask(ONE_MINUTE*5, @Self.DoLoseFocus);
+end;
+
+procedure OnWalkEvent(Sender: PRSWalker; {$H-}Position: TPoint; Destination: TPoint);{$H+}
+begin
+  sender^.Enabled := not (False and Store.IsOpen());
+end;
+
+procedure TScript.drink();
+var
+  p: Int32;
+begin
+  p := Minimap.GetPrayerLevel();
+  if p <= Self.PrayerThreshold then
+  begin
+    Self.WriteMsg('drinking');
+    if Inventory.ClickItem('Prayer potion(4)') or
+       Inventory.ClickItem('Prayer potion(3)') or
+       Inventory.ClickItem('Prayer potion(2)') or
+       Inventory.ClickItem('Prayer potion(1)') then
+      Wait(800);
+  end;
+end;
+
+procedure TScript.setup();
+begin
+  Self.MovementPoints[0] := Point(18572, 13726);
+  Self.MovementPoints[1] := Point(18736, 13770);
+end;
+
+procedure TScript.reset();
+var
+  i: Int32;
+begin
+  Self.WriteMsg('reset');
+
+  for i := 1 to 4 do
+  begin
+    Mouse.Click([Minimap.Center.X - 30, Minimap.Center.Y - 20], MOUSE_LEFT);
+    Wait(1200);
+  end;
+
+  for i := 1 to 4 do
+  begin
+    Mouse.Click([Minimap.Center.X - 35, Minimap.Center.Y], MOUSE_LEFT);
+    Wait(1200);
+  end;
+
+  Wait(2000);
+
+  for i := 1 to 4 do
+  begin
+    Mouse.Click([Minimap.Center.X + 35, Minimap.Center.Y], MOUSE_LEFT);
+    Wait(1200);
+  end;
+
+  for i := 1 to 4 do
+  begin
+    Mouse.Click([Minimap.Center.X + 30, Minimap.Center.Y + 20], MOUSE_LEFT);
+    Wait(1200);
+  end;
+
+  Self.WriteMsg('done');
+end;
+
+function TScript.check(): Boolean;
+begin
+  if Self.EnablePrayerPotions and (Minimap.GetPrayerLevel() < 5) then
+  begin
+    Self.WriteMsg('prayer low, tele out');
+    if Inventory.ClickItem('Royal seed pod') then
+      Wait(2000);
+    TerminateScript('no prayer');
+  end;
+
+  if Self.EnablePrayerPotions and
+     not Inventory.ContainsItem('Prayer potion(4)') and
+     not Inventory.ContainsItem('Prayer potion(3)') and
+     not Inventory.ContainsItem('Prayer potion(2)') and
+     not Inventory.ContainsItem('Prayer potion(1)') then
+  begin
+    Self.WriteMsg('no pots');
+    TerminateScript('no pots');
+  end;
+
+  Result := True;
+end;
+
+procedure TScript.EndScript();
+begin
+  Self.WriteMsg('Script ending...');
+  Logout.ClickLogout();
+  TerminateScript('Script completed');
+end;
+
+procedure TScript.Init();
+begin
+  Self.Version := 'Rev '+{$MACRO SCRIPT_REVISION};
+  Mouse.Speed := SRL.NormalRange(16, 21);
+  Mouse.MissChance := 3;
+  Mouse.Distribution := MOUSE_DISTRIBUTION_GAUSS;
+
+  Self.CriticalPrayer := 5;
+  Self.EmergencyItem := 'Royal seed pod';
+  Self.PrayerPotions := ['Prayer potion(1)', 'Prayer potion(2)', 'Prayer potion(3)', 'Prayer potion(4)',
+                         'Super restore(1)', 'Super restore(2)', 'Super restore(3)', 'Super restore(4)'];
+
+  Self.SetupAntiban();
+  Self.setup();
+
+  if (not RSClient.IsLoggedIn()) then
+    Login.LoginPlayer();
+
+  if (RSClient.Mode <> ERSClientMode.FIXED) then
+    TerminateScript("Client must be in fixed-classic");
+
+  Options.SetZoomLevel(0);
+
+  Self.WriteMsg('startup complete');
+
+  if Self.EnableAggroReset then
+  begin
+    Self.AggroTimer.Setup(Self.AggroResetMinutes * ONE_MINUTE);
+    Self.AggroTimer.Restart();
+  end;
+
+  Self.PrayerTimer.Setup(10 * ONE_SECOND);
+  Self.PrayerTimer.Restart();
+
+  Self.ProgressTimer.Setup(10 * ONE_MINUTE);
+  Self.ProgressTimer.Restart();
+
+  Self.RuntimeTimer.Start();
+  Self.StartExp := XPBar.Read();
+
+  Antiban.Skills := [ERSSkill.MAGIC, ERSSkill.HITPOINTS];
+  Antiban.MinZoom := 0;
+  Antiban.MaxZoom := 0;
+
+  if not Inventory.ContainsItem('Royal seed pod') then
+    Self.WriteMsg('no tele');
+
+  if not Inventory.ContainsItem('Prayer potion(4)') and
+     not Inventory.ContainsItem('Prayer potion(3)') and
+     not Inventory.ContainsItem('Prayer potion(2)') and
+     not Inventory.ContainsItem('Prayer potion(1)') then
+    Self.EnablePrayerPotions := False;
+
+  Self.WriteMsg('ready');
+end;
+
+function TScript.GetState(): EState;
+begin
+  if not RSClient.IsLoggedIn() then
+    Exit(EState.LOGIN_PLAYER);
+
+  if (Self.EnablePrayerPotions and (Minimap.GetPrayerLevel() < 5)) or
+     (Self.EnablePrayerPotions and
+      not Inventory.ContainsItem('Prayer potion(4)') and
+      not Inventory.ContainsItem('Prayer potion(3)') and
+      not Inventory.ContainsItem('Prayer potion(2)') and
+      not Inventory.ContainsItem('Prayer potion(1)')) then
+    Exit(EState.HANDLE_EMERGENCY);
+
+  if Self.EnableAggroReset and Self.AggroTimer.IsFinished() then
+    Exit(EState.RESET_AGGRO);
+
+  if Self.EnablePrayerPotions and (Minimap.GetPrayerLevel() <= Self.PrayerThreshold) then
+    Exit(EState.DRINK_POTIONS);
+
+  if Random(100) < 2 then
+    Exit(EState.DO_ANTIBAN);
+
+  Result := EState.CHECK_PRAYER;
+end;
+
+procedure TScript.Run();
+begin
+  while True do
+  begin
+    if (Self.ShutdownTime > 0) and (GetTimeRunning() > Self.ShutdownTime) then
+      Self.EndScript();
+
+    Self.State := Self.GetState();
+
+    case Self.State of
+      EState.LOGIN_PLAYER: Login.LoginPlayer();
+      EState.CHECK_PRAYER: Wait(2000);
+      EState.DRINK_POTIONS: Self.drink();
+      EState.RESET_AGGRO:
+      begin
+        Self.reset();
+        Self.AggroTimer.Restart();
+      end;
+      EState.DO_ANTIBAN: Self.DoAntiban();
+      EState.HANDLE_EMERGENCY: Self.check();
+      EState.END_SCRIPT: Self.EndScript();
+    end;
+
+    if Self.ProgressTimer.IsFinished() then
+    begin
+      Self.stats();
+      Self.ProgressTimer.Restart();
+    end;
+  end;
+end;
+
+begin
+  Login.PlayerIndex := 0;
+
+  WriteLn('  ____  _           ______     _     __  __ __  __ ___ ');
+  WriteLn(' |  _ \| |         |___  /    ( )   |  \/  |  \/  |__ \');
+  WriteLn(' | |_) | | ___  ___   / /_   _|/ ___| \  / | \  / |  ) |');
+  WriteLn(' |  _ <| |/ _ \/ _ \ / /| | | | / __| |\/| | |\/| | / /');
+  WriteLn(' | |_) | |  __/  __// /_| |_| | \__ \ |  | | |  | |/ /_');
+  WriteLn(' |____/|_|\___|\___/_____\__, | |___/_|  |_|_|  |_|____|');
+  WriteLn('                          __/ |                        ');
+  WriteLn('                         |___/                         ');
+  WriteLn('');
+
+  GUI.Setup('BleeZysMM2Trainer', [750,466]);
+  GUI.PageControl.SetAllChildsFontColor($FFFFFF);
+  GUI.Run();
+
+  Bot.Init();
+  Bot.Run();
+end.

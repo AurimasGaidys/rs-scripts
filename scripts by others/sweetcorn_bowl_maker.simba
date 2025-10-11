@@ -1,0 +1,199 @@
+{$DEFINE SCRIPT_ID := 'sweetcorn-bowl-mixer'}
+{$DEFINE SCRIPT_REVISION := '3'}
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+type
+  EMixerState = (
+    WAIT_STATE,
+    OPEN_BANK, DEPOSIT_OUTPUT,
+    WITHDRAW_SWEETCORN, WITHDRAW_BOWLS,
+    CLOSE_INTERFACE,
+    MIX_ITEMS,
+    OUT_OF_SUPPLIES, END_SCRIPT
+  );
+
+type
+  TSweetcornMixer = record(TBaseBankScript)
+    State: EMixerState;
+    Sweetcorn, Bowl: TRSBankItem;
+    SweetcornName, BowlName: String;
+  end;
+
+procedure TSweetcornMixer.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  Mouse.Speed := 10;
+  Antiban.Skills := [ERSSkill.COOKING, ERSSkill.CRAFTING];
+  Antiban.MinZoom := 10;
+  Antiban.MaxZoom := 80;
+  inherited;
+
+  Self.SweetcornName := 'Cooked sweetcorn';
+  Self.BowlName := 'Bowl';
+
+  Self.Sweetcorn := TRSBankItem.Setup(Self.SweetcornName, 14, False);
+  Self.Bowl := TRSBankItem.Setup(Self.BowlName, 14, False);
+
+  XPBar.EarnedXP();
+end;
+
+function TSweetcornMixer.GetState(): EMixerState;
+begin
+  if WL.Activity.IsFinished() then
+    Exit(EMixerState.END_SCRIPT);
+
+  if ChooseOption.IsOpen then
+    Exit(EMixerState.CLOSE_INTERFACE);
+
+  if RSInterface.IsOpen() then
+  begin
+    if Bank.IsOpen() then
+    begin
+      // Fully out of sweetcorn
+      if not Bank.ContainsItem(Self.SweetcornName) and
+   not Inventory.ContainsItem(Self.SweetcornName) and
+   not Bank.ContainsItem(Self.BowlName) and
+   not Inventory.ContainsItem(Self.BowlName) then
+begin
+  Self.BankEmpty := True;
+  Exit(EMixerState.OUT_OF_SUPPLIES);
+end;
+
+
+      // Deposit if inventory has only output or other items
+      if (not Inventory.ContainsItem(Self.SweetcornName)) and
+         (not Inventory.ContainsItem(Self.BowlName)) and
+         (Inventory.Count() > 0) then
+        Exit(EMixerState.DEPOSIT_OUTPUT);
+
+      // Withdraw items one at a time if missing
+      if not Inventory.ContainsItem(Self.SweetcornName) then
+        Exit(EMixerState.WITHDRAW_SWEETCORN);
+
+      if not Inventory.ContainsItem(Self.BowlName) then
+        Exit(EMixerState.WITHDRAW_BOWLS);
+
+      Exit(EMixerState.CLOSE_INTERFACE);
+    end;
+  end;
+
+  if Inventory.ContainsItem(Self.SweetcornName) and
+     Inventory.ContainsItem(Self.BowlName) then
+    Exit(EMixerState.MIX_ITEMS);
+
+  Exit(EMixerState.OPEN_BANK);
+end;
+
+function TSweetcornMixer.MixItems(): Boolean;
+var
+  bowlSlots, cornSlots: TIntegerArray;
+  bowlSlot, cornSlot: Int32;
+  i: Int32;
+begin
+  Result := False;
+
+  if not Inventory.ContainsItem(Self.SweetcornName) or
+     not Inventory.ContainsItem(Self.BowlName) then
+    Exit;
+
+  // Find ALL slots containing bowls and sweetcorn
+  if Inventory.FindItem(Self.BowlName, bowlSlots) and
+     Inventory.FindItem(Self.SweetcornName, cornSlots) then
+  begin
+    // Randomly select which bowl and sweetcorn to use
+    bowlSlot := bowlSlots[Random(Length(bowlSlots))];
+    cornSlot := cornSlots[Random(Length(cornSlots))];
+
+    WriteLn('[DEBUG]: Using Bowl from slot ', bowlSlot, ' and Sweetcorn from slot ', cornSlot);
+
+    Inventory.Use(bowlSlot, cornSlot);
+    Wait(RandomRange(150, 250));
+
+    if not WaitUntil(Make.IsOpen, 100, 3000) then
+    begin
+      WriteLn('[DEBUG]: Make-X interface did not appear.');
+      Exit;
+    end;
+
+    PressKey(VK_SPACE);
+    Wait(50, 100);
+    KeyUp(VK_SPACE);
+
+    Self.TotalActions += 14;
+
+    for i := 0 to 250 do
+    begin
+      if not Inventory.ContainsItem(Self.SweetcornName) and
+         not Inventory.ContainsItem(Self.BowlName) then
+        Break;
+      Wait(100);
+    end;
+
+    Self.DoAntiban();
+    WL.Activity.Restart();
+    Result := True;
+  end;
+end;
+
+function TSweetcornMixer.OpenBank(): Boolean;
+begin
+  Result := Bank.Open(ERSBankLocation.GRAND_EXCHANGE);
+end;
+
+procedure TSweetcornMixer.Run(maxActions: UInt32; maxTime: UInt64);
+begin
+  Self.Init(maxActions, maxTime);
+
+  repeat
+    Self.State := Self.GetState();
+    Self.SetAction(ToStr(Self.State));
+
+    case Self.State of
+      WAIT_STATE:
+        Wait(500, 800);
+
+     OPEN_BANK:
+  begin
+    if not Bank.IsOpen() then
+      Self.OpenBank();
+
+    if Bank.IsOpen() then
+    begin
+      Bank.DepositAll();
+      repeat Wait(50); until Inventory.Count() = 0;
+    end;
+  end;
+
+
+      DEPOSIT_OUTPUT:
+        if Bank.IsOpen() then
+        begin
+          Bank.DepositAll();
+          repeat Wait(50); until Inventory.Count() = 0;
+        end;
+
+      WITHDRAW_SWEETCORN:
+        Self.BankEmpty := not Self.Withdraw(Self.Sweetcorn);
+
+      WITHDRAW_BOWLS:
+        Self.BankEmpty := not Self.Withdraw(Self.Bowl);
+
+      CLOSE_INTERFACE:
+        RSInterface.Close();
+
+      MIX_ITEMS:
+        Self.MixItems();
+
+      OUT_OF_SUPPLIES, END_SCRIPT:
+        Break;
+    end;
+  until Self.ShouldStop();
+end;
+
+var
+  SweetcornMixer: TSweetcornMixer;
+
+begin
+  SweetcornMixer.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
+

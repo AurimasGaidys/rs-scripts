@@ -1,0 +1,414 @@
+{$DEFINE SCRIPT_ID := 'f2p-ash-scatterer'}
+{$DEFINE SCRIPT_REVISION := '2'}
+{$DEFINE SCRIPT_GUI}
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+type
+  ERSAshType = (
+    VILE_ASHES, FIENDISH_ASHES
+  );
+
+  EJitterbugMode = (
+    CASUAL, EFFICIENT, OSU_PRO, DISABLED
+  );
+
+var
+  CurrentBank: EBankChunk = EBankChunk.GRAND_EXCHANGE;
+  CurrentAsh: ERSAshType = ERSAshType.VILE_ASHES;
+  JitterbugMode: EJitterbugMode = EJitterbugMode.EFFICIENT;
+
+type
+  EAshScattererState = (
+    OPEN_BANK,
+    WITHDRAW_ASHES,
+    OPEN_COLLECT,
+    HANDLE_COLLECT,
+    CLOSE_INTERFACE,
+    SCATTER_ASHES,
+    WAIT_SCATTER,
+    LEVEL_UP,
+    CLOSE_CONTEXT,
+    OUT_OF_ASHES,
+    END_SCRIPT
+  );
+
+  TAshScatterer = record(TBaseBankScript)
+    State: EAshScattererState;
+
+    Ashes: TRSBankItem;
+    ScatterTimer: TCountDown;
+    CurrentSlot: Int32;
+    IsScattering: Boolean;
+    ExpectedXP: Int32;
+  end;
+
+procedure TAntiban.Setup(); override;
+begin
+  Self.Skills := [ERSSkill.PRAYER, ERSSkill.TOTAL];
+  Self.MinZoom := 15;
+  Self.MaxZoom := 85;
+
+  inherited;
+end;
+
+procedure TAshScatterer.SetupAshType();
+var
+  ashName: String;
+  ashPrice: Int32;
+begin
+  case CurrentAsh of
+    ERSAshType.VILE_ASHES:
+      begin
+        ashName := 'Vile ashes';
+        Self.ExpectedXP := 25;
+      end;
+    ERSAshType.FIENDISH_ASHES:
+      begin
+        ashName := 'Fiendish ashes';
+        Self.ExpectedXP := 10;
+      end;
+  end;
+
+  Self.Ashes := TRSBankItem.Setup(ashName, Bank.QUANTITY_ALL, False);
+
+  ashPrice := ItemData.GetAverage(ashName);
+  Self.ActionProfit := -ashPrice;
+end;
+
+// ***** Speed Profile Settings *****
+function TAshScatterer.GetJitterbugDelay(): Int32;
+begin
+  case JitterbugMode of       // Adjust speed profiles - min & max values in ms
+    EJitterbugMode.CASUAL:    Result := Random(-300, 600);
+    EJitterbugMode.EFFICIENT: Result := Random(-100, 200);
+    EJitterbugMode.OSU_PRO:   Result := Random(-20, 50);
+    EJitterbugMode.DISABLED:  Result := 0;
+  end;
+end;
+
+procedure TAshScatterer.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  Antiban.Skills := [ERSSkill.PRAYER, ERSSkill.TOTAL];
+  Antiban.MinZoom := 15;
+  Antiban.MaxZoom := 85;
+
+  inherited;
+
+  Map.SetupChunk(CurrentBank.Get());
+  Objects.Setup(Map.Objects(), @Map.Walker);
+  NPCs.Setup(Map.NPCs(), @Map.Walker);
+
+  Self.SetupAshType();
+  Self.ScatterTimer.Setup(600);
+  Self.CurrentSlot := 0;
+
+  XPBar.EarnedXP();
+end;
+
+function TAshScatterer.HasAshes(): Boolean;
+begin
+  Result := Inventory.ContainsItem(Self.Ashes.Item);
+end;
+
+function TAshScatterer.GetNextAshSlot(): Int32;
+var
+  slots: TIntegerArray;
+begin
+  if not Inventory.FindItem(Self.Ashes.Item, slots) then
+    Exit(-1);
+
+  for Result in slots do
+    if Inventory.IsSlotUsed(Result) then
+      Exit;
+
+  Result := -1;
+end;
+
+function TAshScatterer.ScatterNextAsh(): Boolean;
+var
+  slot: Int32;
+begin
+  slot := Self.GetNextAshSlot();
+  if slot = -1 then
+    Exit;
+
+  Self.CurrentSlot := slot;
+
+  if Inventory.ClickSlot(slot) then
+  begin
+    Self.IsScattering := True;
+    Self.ScatterTimer.Restart();
+    Result := True;
+  end;
+end;
+
+function TAshScatterer.WaitScattering(): Boolean;
+var
+  initialCount: Int32;
+  xpGained: Boolean;
+begin
+  initialCount := Inventory.CountItem(Self.Ashes.Item);
+
+  Result := WaitUntil(
+    (Inventory.CountItem(Self.Ashes.Item) < initialCount),
+    100,
+    1600
+  );
+
+  if not Result then
+  begin
+    xpGained := XPBar.EarnedXP();
+    Result := xpGained;
+  end;
+
+  if Result then
+  begin
+    Self.TotalActions += 1;
+    Self.TotalProfit += Self.ActionProfit;
+    WL.Activity.Restart();
+    Self.ScatterTimer.Restart(Self.GetJitterbugDelay());
+  end;
+
+  Self.IsScattering := False;
+end;
+
+function TAshScatterer.WithdrawAshes(): Boolean;
+begin
+  Result := Self.Withdraw(Self.Ashes);
+  if Result then
+    WL.Activity.Restart();
+end;
+
+function TAshScatterer.GetState(): EAshScattererState;
+begin
+  if WL.Activity.IsFinished() then
+    Exit(EAshScattererState.END_SCRIPT);
+
+  if Chat.LeveledUp() then
+  begin
+    Self.IsScattering := False;
+    Exit(EAshScattererState.LEVEL_UP);
+  end;
+
+  if RSInterface.IsOpen() then
+  begin
+    Self.IsScattering := False;
+
+    if Bank.IsOpen() then
+    begin
+      if Self.HasAshes() then
+        Exit(EAshScattererState.CLOSE_INTERFACE);
+
+      if Self.BankEmpty then
+        Exit(EAshScattererState.CLOSE_INTERFACE);
+
+      Exit(EAshScattererState.WITHDRAW_ASHES);
+    end;
+
+    if CollectBox.IsOpen() then
+    begin
+      if Self.CollectEmpty then
+        Exit(EAshScattererState.CLOSE_INTERFACE);
+
+      Exit(EAshScattererState.HANDLE_COLLECT);
+    end;
+
+    Exit(EAshScattererState.CLOSE_INTERFACE);
+  end;
+
+  if ChooseOption.IsOpen() then
+    Exit(EAshScattererState.CLOSE_CONTEXT);
+
+  if Self.IsScattering then
+  begin
+    if not Self.ScatterTimer.IsFinished() then
+      Exit(EAshScattererState.WAIT_SCATTER);
+    Self.IsScattering := False;
+  end;
+
+  if Self.HasAshes() then
+    Exit(EAshScattererState.SCATTER_ASHES);
+
+  if Self.BankEmpty then
+  begin
+    if Self.CollectEmpty then
+      Exit(EAshScattererState.OUT_OF_ASHES);
+
+    Exit(EAshScattererState.OPEN_COLLECT);
+  end;
+
+  Exit(EAshScattererState.OPEN_BANK);
+end;
+
+function TAshScatterer.Terminate(): Boolean; override;
+begin
+  Result := True;
+end;
+
+procedure TAshScatterer.Run(maxActions: UInt32; maxTime: UInt64);
+begin
+  Self.Init(maxActions, maxTime);
+
+  repeat
+    Self.State := Self.GetState();
+    Self.SetAction(ToStr(Self.State));
+
+    case Self.State of
+      EAshScattererState.OPEN_BANK: Banks.WalkOpen();
+      EAshScattererState.WITHDRAW_ASHES: Self.WithdrawAshes();
+      EAshScattererState.OPEN_COLLECT: CollectBoxes.WalkOpen();
+      EAshScattererState.HANDLE_COLLECT: Self.HandleCollectBox([Self.Ashes.Item]);
+      EAshScattererState.CLOSE_INTERFACE: RSInterface.Close();
+      EAshScattererState.SCATTER_ASHES: Self.ScatterNextAsh();
+      EAshScattererState.WAIT_SCATTER: Self.WaitScattering();
+      EAshScattererState.LEVEL_UP: Chat.HandleLevelUp();
+      EAshScattererState.CLOSE_CONTEXT: ChooseOption.Close();
+      EAshScattererState.OUT_OF_ASHES,
+      EAshScattererState.END_SCRIPT: Break;
+    end;
+
+    Self.DoAntiban();
+  until Self.ShouldStop();
+
+  if not Self.Terminate() then
+    TerminateScript(Self.Name + ' didn''t terminate properly. Stopping execution.');
+end;
+
+var
+  AshScatterer: TAshScatterer;
+
+function BankFromIndex(index: Int32): EBankChunk;
+begin
+  case index of
+    0: Result := EBankChunk.GRAND_EXCHANGE;
+    1: Result := EBankChunk.VARROCK;
+    2: Result := EBankChunk.FALADOR;
+    3: Result := EBankChunk.EDGEVILLE;
+    4: Result := EBankChunk.DRAYNOR_VILLAGE;
+    5: Result := EBankChunk.AL_KHARID;
+    else Result := EBankChunk.GRAND_EXCHANGE;
+  end;
+end;
+
+{$IFDEF SCRIPT_GUI}
+type
+  TF2PAshScattererConfig = record(TScriptForm)
+    BankSelector: TLabeledCombobox;
+    AshSelector: TLabeledCombobox;
+    JitterbugSelector: TLabeledCombobox;
+    InfoLabel: TLabel;
+    JitterbugInfoLabel: TLabel;
+    Config: TConfigJSON;
+  end;
+
+procedure TF2PAshScattererConfig.StartScript(sender: TObject); override;
+begin
+  CurrentBank := BankFromIndex(Self.BankSelector.GetItemIndex());
+  CurrentAsh := ERSAshType(Self.AshSelector.GetItemIndex());
+  JitterbugMode := EJitterbugMode(Self.JitterbugSelector.GetItemIndex());
+
+  Self.Config.Put('bank', Self.BankSelector.GetItemIndex());
+  Self.Config.Put('ash', Ord(CurrentAsh));
+  Self.Config.Put('jitterbug', Ord(JitterbugMode));
+
+  inherited;
+end;
+
+procedure TF2PAshScattererConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('F2P Ash Scatterer');
+  Self.Config.Setup('f2p-ash-scatterer');
+
+  if Self.Config.Has('bank') then
+    CurrentBank := BankFromIndex(Self.Config.GetInt('bank'));
+  if Self.Config.Has('ash') then
+    CurrentAsh := ERSAshType(Self.Config.GetInt('ash'));
+  if Self.Config.Has('jitterbug') then
+    JitterbugMode := EJitterbugMode(Self.Config.GetInt('jitterbug'));
+
+  Self.Start.setOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+
+  Self.CreateAccountManager(tab);
+
+  with Self.BankSelector do
+  begin
+    Create(tab);
+    SetCaption('Bank location:');
+    SetLeft(TControl.AdjustToDPI(50));
+    SetTop(TControl.AdjustToDPI(200));
+    SetWidth(TControl.AdjustToDPI(200));
+    SetStyle(csDropDownList);
+    AddItemArray(['Grand Exchange', 'Varrock', 'Falador', 'Edgeville', 'Draynor Village', 'Al Kharid']);
+    if Self.Config.Has('bank') then
+      Self.BankSelector.SetItemIndex(Self.Config.GetInt('bank'))
+    else
+      Self.BankSelector.SetItemIndex(0);
+  end;
+
+  with Self.AshSelector do
+  begin
+    Create(tab);
+    SetCaption('Ash type:');
+    SetLeft(Self.BankSelector.GetLeft());
+    SetTop(Self.BankSelector.GetBottom() + TControl.AdjustToDPI(20));
+    SetWidth(TControl.AdjustToDPI(200));
+    SetStyle(csDropDownList);
+    AddItemArray(['Vile ashes (25 XP)', 'Fiendish ashes (10 XP)']);
+    SetItemIndex(Ord(CurrentAsh));
+  end;
+
+  with Self.JitterbugSelector do
+  begin
+    Create(tab);
+    SetCaption('Speed profile:');
+    SetLeft(Self.AshSelector.GetLeft());
+    SetTop(Self.AshSelector.GetBottom() + TControl.AdjustToDPI(20));
+    SetWidth(TControl.AdjustToDPI(200));
+    SetStyle(csDropDownList);
+    AddItemArray(['Casual (slow & relaxed)', 'Efficient (balanced)', 'OSU Pro (near perfect)', 'Disabled (max speed)']);
+    SetItemIndex(Ord(JitterbugMode));
+  end;
+
+  with Self.JitterbugInfoLabel do
+  begin
+    Create(tab);
+    SetCaption('Speed profiles control timing delays between actions.' + LINEENDING +
+               'Long sessions at higher speeds may appear less human.');
+    SetLeft(Self.JitterbugSelector.GetLeft());
+    SetTop(Self.JitterbugSelector.GetBottom() + TControl.AdjustToDPI(10));
+    SetWidth(TControl.AdjustToDPI(280));
+  end;
+
+  with Self.InfoLabel do
+  begin
+    Create(tab);
+    SetCaption('This script withdraws ashes from the bank and scatters them for Prayer XP.' + LINEENDING + LINEENDING +
+               'Start at your selected bank location with ashes in your inventory' + LINEENDING +
+               'for faster initial setup.');
+    SetLeft(Self.JitterbugSelector.GetRight() + TControl.AdjustToDPI(40));
+    SetTop(Self.BankSelector.GetTop());
+  end;
+
+  Self.CreateAntibanManager();
+  Self.CreateWaspLibSettings();
+  Self.CreateAPISettings();
+
+  inherited;
+end;
+
+var
+  F2PAshScattererConfig: TF2PAshScattererConfig;
+{$ENDIF}
+
+begin
+  {$IFDEF SCRIPT_GUI}
+  F2PAshScattererConfig.Run();
+  {$ENDIF}
+  AshScatterer.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.

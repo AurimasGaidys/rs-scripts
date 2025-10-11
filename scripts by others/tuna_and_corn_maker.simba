@@ -1,0 +1,207 @@
+{$DEFINE SCRIPT_ID := 'tuna-sweetcorn-mixer'}
+{$DEFINE SCRIPT_REVISION := '5'}
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+type
+  EMixerState = (
+    WAIT_STATE,
+    OPEN_BANK, DEPOSIT_ALL,
+    WITHDRAW_ITEMS,
+    CLOSE_INTERFACE,
+    MIX_ITEMS,
+    OUT_OF_SUPPLIES, END_SCRIPT
+  );
+
+type
+  TTunaMixer = record(TBaseBankScript)
+    State: EMixerState;
+    Knife, Tuna, Sweetcorn: TRSBankItem;
+    KnifeName, TunaName, SweetcornName: String;
+    HasKnife: Boolean;
+  end;
+
+procedure TTunaMixer.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  Mouse.Speed := 10;
+  Antiban.Skills := [ERSSkill.COOKING];
+  Antiban.MinZoom := 10;
+  Antiban.MaxZoom := 80;
+  inherited;
+
+  Self.KnifeName := 'Knife';
+  Self.TunaName := 'Tuna';
+  Self.SweetcornName := 'Sweetcorn';
+
+  Self.Knife := TRSBankItem.Setup(Self.KnifeName, 1, False);
+  Self.Tuna := TRSBankItem.Setup(Self.TunaName, 13, False);
+  Self.Sweetcorn := TRSBankItem.Setup(Self.SweetcornName, 13, False);
+
+  Self.HasKnife := False;
+  XPBar.EarnedXP();
+end;
+
+function TTunaMixer.GetState(): EMixerState;
+begin
+  if WL.Activity.IsFinished() then
+    Exit(EMixerState.END_SCRIPT);
+
+  if ChooseOption.IsOpen then
+    Exit(EMixerState.CLOSE_INTERFACE);
+
+  if RSInterface.IsOpen() then
+  begin
+    if Bank.IsOpen() then
+    begin
+      if not Bank.ContainsItem(Self.TunaName) and
+         not Inventory.ContainsItem(Self.TunaName) and
+         not Bank.ContainsItem(Self.SweetcornName) and
+         not Inventory.ContainsItem(Self.SweetcornName) then
+      begin
+        Self.BankEmpty := True;
+        Exit(EMixerState.OUT_OF_SUPPLIES);
+      end;
+
+      if (not Inventory.ContainsItem(Self.TunaName)) and
+         (not Inventory.ContainsItem(Self.SweetcornName)) and
+         (Inventory.Count() > 1) then
+        Exit(EMixerState.DEPOSIT_ALL);
+
+      if not Inventory.ContainsItem(Self.KnifeName) then
+        Exit(EMixerState.WITHDRAW_ITEMS);
+
+      if not Inventory.ContainsItem(Self.TunaName) then
+        Exit(EMixerState.WITHDRAW_ITEMS);
+
+      if not Inventory.ContainsItem(Self.SweetcornName) then
+        Exit(EMixerState.WITHDRAW_ITEMS);
+
+      Exit(EMixerState.CLOSE_INTERFACE);
+    end;
+  end;
+
+  if Inventory.ContainsItem(Self.KnifeName) and
+     Inventory.ContainsItem(Self.TunaName) and
+     Inventory.ContainsItem(Self.SweetcornName) then
+    Exit(EMixerState.MIX_ITEMS);
+
+  Exit(EMixerState.OPEN_BANK);
+end;
+
+function TTunaMixer.MixItems(): Boolean;
+var
+  tunaSlots, cornSlots: TIntegerArray;
+  tunaSlot, cornSlot: Int32;
+  i: Int32;
+begin
+  Result := False;
+
+  if not Inventory.ContainsItem(Self.TunaName) or
+     not Inventory.ContainsItem(Self.SweetcornName) then
+    Exit;
+
+  // Find ALL slots containing tuna and sweetcorn
+  if Inventory.FindItem(Self.TunaName, tunaSlots) and
+     Inventory.FindItem(Self.SweetcornName, cornSlots) then
+  begin
+    // Randomly select which tuna and sweetcorn to use
+    tunaSlot := tunaSlots[Random(Length(tunaSlots))];
+    cornSlot := cornSlots[Random(Length(cornSlots))];
+
+    WriteLn('[DEBUG]: Using Tuna from slot ', tunaSlot, ' and Sweetcorn from slot ', cornSlot);
+
+    Inventory.Use(tunaSlot, cornSlot);
+    Wait(RandomRange(100, 250));
+
+    // ✅ Wait for the Make-X interface
+    if not WaitUntil(Make.IsOpen, 100, 3000) then
+    begin
+      WriteLn('[DEBUG]: Make-X interface did not appear.');
+      Exit;
+    end;
+
+    // ✅ Press spacebar to confirm, same as your working scripts
+    PressKey(VK_SPACE);
+    Wait(50, 100);
+    KeyUp(VK_SPACE);
+
+    Self.TotalActions += 13;
+
+    for i := 0 to 250 do
+    begin
+      if not Inventory.ContainsItem(Self.TunaName) and
+         not Inventory.ContainsItem(Self.SweetcornName) then
+        Break;
+      Wait(100);
+    end;
+
+    Self.DoAntiban();
+    WL.Activity.Restart();
+    Result := True;
+  end;
+end;
+
+
+function TTunaMixer.OpenBank(): Boolean;
+begin
+  Result := Bank.Open(ERSBankLocation.GRAND_EXCHANGE);
+end;
+
+procedure TTunaMixer.Run(maxActions: UInt32; maxTime: UInt64);
+begin
+  Self.Init(maxActions, maxTime);
+
+  repeat
+    Self.State := Self.GetState();
+    Self.SetAction(ToStr(Self.State));
+
+    case Self.State of
+      WAIT_STATE:
+        Wait(500, 800);
+
+      OPEN_BANK:
+        if not Self.OpenBank() then
+        begin
+          WriteLn('[DEBUG]: Failed to open bank. Retrying...');
+          Wait(500, 800);
+        end;
+
+      DEPOSIT_ALL:
+        if Bank.IsOpen() then
+        begin
+          Bank.DepositAll();
+          repeat Wait(50); until Inventory.Count() = 0;
+        end;
+
+      WITHDRAW_ITEMS:
+        if Bank.IsOpen() then
+        begin
+          if not Inventory.ContainsItem(Self.KnifeName) then
+            Self.HasKnife := Self.Withdraw(Self.Knife);
+
+          if not Inventory.ContainsItem(Self.TunaName) then
+            Self.BankEmpty := not Self.Withdraw(Self.Tuna);
+
+          if not Inventory.ContainsItem(Self.SweetcornName) then
+            Self.BankEmpty := not Self.Withdraw(Self.Sweetcorn);
+        end;
+
+      CLOSE_INTERFACE:
+        RSInterface.Close();
+
+      MIX_ITEMS:
+        Self.MixItems();
+
+      OUT_OF_SUPPLIES, END_SCRIPT:
+        Break;
+    end;
+  until Self.ShouldStop();
+end;
+
+var
+  TunaMixer: TTunaMixer;
+
+begin
+  TunaMixer.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
+

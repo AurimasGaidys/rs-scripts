@@ -1,0 +1,346 @@
+{$DEFINE SCRIPT_ID := 'configurable-potion-maker'}
+{$DEFINE SCRIPT_REVISION := '3'}  // rev bump
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+type
+  EPotionState = (WAIT_STATE, OPEN_BANK, DEPOSIT_ALL, WITHDRAW_ITEMS, CLOSE_INTERFACE, MAKE_POTIONS, OUT_OF_SUPPLIES, END_SCRIPT);
+
+type
+  TPotionMaker = record
+    (TBaseBankScript) State: EPotionState;
+    UnfinishedPotion, SecondaryIngredient: TRSBankItem;
+    UnfinishedName, SecondaryName: String;
+    PotionsPerInventory: Int32;
+    FastWithdraw: Boolean;
+    IsMakingPotions: Boolean;  // Track if we're currently in the potion-making process
+    LastBankAction: UInt64;    // Track last bank action time for optimization
+  end;
+
+{===================== CONFIG =====================}
+procedure TPotionMaker.SetPotionType();
+begin
+  Self.UnfinishedName := 'Dwarf weed potion (unf)';
+  Self.SecondaryName  := 'Wine of zamorak';
+  Self.PotionsPerInventory := 14;
+  Self.FastWithdraw := True;
+end;
+
+{===================== HELPERS =====================}
+// Count items in inventory by name using Inventory.FindItem -> slots length
+function CountInInventory(const aName: String): Int32;
+var
+  slots: TIntegerArray;
+begin
+  Result := 0;
+  if Inventory.FindItem(aName, slots) then
+    Result := Length(slots);
+end;
+
+// True only if we have a perfect 14+14 ingredient loadout occupying exactly 28 slots
+function TPotionMaker.HaveFullIngredients: Boolean;
+var
+  cUnf, cSec: Int32;
+begin
+  cUnf := CountInInventory(Self.UnfinishedName);
+  cSec := CountInInventory(Self.SecondaryName);
+  Result := (Inventory.Count() = Self.PotionsPerInventory * 2)
+            and (cUnf >= Self.PotionsPerInventory)
+            and (cSec >= Self.PotionsPerInventory);
+end;
+
+// Deposit whenever inventory is not a perfect ingredient loadout (e.g., finished pots only,
+// leftover wine only, partial stacks, random junk, etc.)
+function TPotionMaker.ShouldDepositAtBank: Boolean;
+var
+  cUnf, cSec: Int32;
+begin
+  cUnf := CountInInventory(Self.UnfinishedName);
+  cSec := CountInInventory(Self.SecondaryName);
+
+  // If we have no unfinished potions but have wine (leftover from prescription goggles), deposit
+  if (cUnf = 0) and (cSec > 0) then
+  begin
+    WriteLn('[DEBUG]: Depositing leftover wine from prescription goggles');
+    Exit(True);
+  end;
+
+  Result := (Inventory.Count() > 0) and (not Self.HaveFullIngredients);
+end;
+
+{===================== INIT =====================}
+procedure TPotionMaker.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  Mouse.Speed := 35;  // Increased speed for faster interactions
+  Antiban.Skills := [];
+  Antiban.MinZoom := 50;
+  Antiban.MaxZoom := 80;
+  inherited;
+
+  Self.SetPotionType();
+  Self.IsMakingPotions := False;  // Initialize the flag
+  Self.LastBankAction := 0;       // Initialize timing
+
+  Self.UnfinishedPotion   := TRSBankItem.Setup(Self.UnfinishedName, 14, False);
+  Self.SecondaryIngredient:= TRSBankItem.Setup(Self.SecondaryName, 14, False);
+
+  WriteLn('[SETUP]: Making potions with ', Self.UnfinishedName, ' + ', Self.SecondaryName);
+  WriteLn('[SETUP]: Fast Withdraw: ', Self.FastWithdraw);
+  XPBar.EarnedXP();
+end;
+
+{===================== FSM =====================}
+function TPotionMaker.GetState(): EPotionState;
+begin
+  if ChooseOption.IsOpen then
+    Exit(EPotionState.CLOSE_INTERFACE);
+
+  if RSInterface.IsOpen() then
+  begin
+    if Bank.IsOpen() then
+    begin
+      // 1) Out-of-supplies check (bank and inv)
+      if (not Bank.ContainsItem(Self.UnfinishedName)) or (not Bank.ContainsItem(Self.SecondaryName)) then
+        if (not Inventory.ContainsItem(Self.UnfinishedName)) and (not Inventory.ContainsItem(Self.SecondaryName)) then
+        begin
+          WriteLn('[DEBUG]: Out of supplies - Unf in bank: ', Bank.ContainsItem(Self.UnfinishedName),
+                  ', Sec in bank: ', Bank.ContainsItem(Self.SecondaryName));
+          Self.BankEmpty := True;
+          Exit(EPotionState.OUT_OF_SUPPLIES);
+        end;
+
+      // 2) **Deposit-first policy**:
+      //    If inventory is anything other than a clean 14+14 ingredient set, DEPOSIT_ALL.
+      if Self.ShouldDepositAtBank() then
+        Exit(EPotionState.DEPOSIT_ALL);
+
+      // 3) Withdraw missing ingredients (only after deposit decision)
+      if not Inventory.ContainsItem(Self.UnfinishedName) then
+        Exit(EPotionState.WITHDRAW_ITEMS);
+      if not Inventory.ContainsItem(Self.SecondaryName) then
+        Exit(EPotionState.WITHDRAW_ITEMS);
+
+      // 4) If we already have full ingredients, close bank to start mixing
+      if Self.HaveFullIngredients then
+        Exit(EPotionState.CLOSE_INTERFACE);
+
+      // Fallback: close interfaces
+      Exit(EPotionState.CLOSE_INTERFACE);
+    end;
+  end;
+
+  // Bank not open - check if we have ingredients and can start making potions immediately
+  if Inventory.ContainsItem(Self.UnfinishedName) and Inventory.ContainsItem(Self.SecondaryName) then
+  begin
+    // Only start making potions if we're not already in the process
+    if not Self.IsMakingPotions then
+      Exit(EPotionState.MAKE_POTIONS)
+    else
+      Exit(EPotionState.WAIT_STATE);  // Wait if already making potions
+  end;
+
+  // If we just finished a bank action, don't wait too long before opening bank again
+  if (GetTickCount() - Self.LastBankAction) > 1000 then  // 1 second cooldown
+    Exit(EPotionState.OPEN_BANK);
+
+  Exit(EPotionState.WAIT_STATE);
+end;
+
+{===================== ACTIONS =====================}
+function TPotionMaker.MakePotions(): Boolean;
+var
+  unfinishedSlots, secondarySlots, bottomUnfinished, topSecondary: TIntegerArray;
+  unfinishedSlot, secondarySlot, i: Int32;
+  initialUnfCount, initialSecCount: Int32;
+begin
+  Result := False;
+  if not Inventory.ContainsItem(Self.UnfinishedName) or not Inventory.ContainsItem(Self.SecondaryName) then
+    Exit;
+
+  // If we're already making potions, don't start again
+  if Self.IsMakingPotions then
+  begin
+    WriteLn('[DEBUG]: Already making potions, waiting for completion...');
+    Exit;
+  end;
+
+  if Inventory.FindItem(Self.UnfinishedName, unfinishedSlots)
+     and Inventory.FindItem(Self.SecondaryName, secondarySlots) then
+  begin
+    // Set the flag to indicate we're starting the potion-making process
+    Self.IsMakingPotions := True;
+
+    // Store initial counts for better completion detection
+    initialUnfCount := CountInInventory(Self.UnfinishedName);
+    initialSecCount := CountInInventory(Self.SecondaryName);
+
+    // keep item-picking patterns identical to your original
+    for i := 0 to High(unfinishedSlots) do
+      if (unfinishedSlots[i] >= 12) and (unfinishedSlots[i] <= 13) then
+        bottomUnfinished := bottomUnfinished + [unfinishedSlots[i]];
+    if Length(bottomUnfinished) = 0 then
+      bottomUnfinished := unfinishedSlots;
+
+    for i := 0 to High(secondarySlots) do
+      if (secondarySlots[i] >= 14) and (secondarySlots[i] <= 15) then
+        topSecondary := topSecondary + [secondarySlots[i]];
+    if Length(topSecondary) = 0 then
+      topSecondary := secondarySlots;
+
+    unfinishedSlot := bottomUnfinished[Random(Length(bottomUnfinished))];
+    secondarySlot  := topSecondary[Random(Length(topSecondary))];
+
+    WriteLn('[DEBUG]: Using ', Self.UnfinishedName, ' from slot ', unfinishedSlot,
+            ' and ', Self.SecondaryName, ' from slot ', secondarySlot);
+
+    Inventory.Use(unfinishedSlot, secondarySlot);
+    Wait(RandomRange(50, 150));  // Reduced wait time
+
+    if not WaitUntil(Make.IsOpen, 50, 2000) then  // Faster timeout
+    begin
+      WriteLn('[DEBUG]: Make-X interface did not appear.');
+      Self.IsMakingPotions := False;  // Reset flag on failure
+      Exit;
+    end;
+
+    PressKey(VK_SPACE);
+    Wait(25, 50);  // Reduced wait time
+    KeyUp(VK_SPACE);
+
+    Self.TotalActions += Self.PotionsPerInventory;
+
+    // Improved completion detection with more reliable logic
+    for i := 0 to 200 do  // Increased loop count for more thorough checking
+    begin
+      // Wait a bit longer initially to let the process start
+      if i < 10 then
+      begin
+        Wait(100);
+        Continue;
+      end;
+
+      // Check if we have significantly fewer primary ingredients (unfinished potions) than we started with
+      // Secondary ingredients (wine) may not be consumed due to prescription goggles
+      if (CountInInventory(Self.UnfinishedName) < initialUnfCount - 3) then
+      begin
+        WriteLn('[DEBUG]: Potion making in progress, unfinished potions being consumed...');
+        Wait(75);  // Wait longer to let the process continue
+        Continue;
+      end;
+
+      // Completion check - primary ingredient (unfinished potions) must be gone
+      // Secondary ingredient (wine) may have leftovers due to prescription goggles
+      if (CountInInventory(Self.UnfinishedName) <= 0) then
+      begin
+        WriteLn('[DEBUG]: Finished making potions, unfinished potions exhausted');
+        Break;
+      end;
+
+      // Alternative completion check - if we have very few unfinished potions
+      // Allow for leftover wine due to prescription goggles
+      if (CountInInventory(Self.UnfinishedName) <= 1) then
+      begin
+        WriteLn('[DEBUG]: Finished making potions, very few unfinished potions left');
+        Break;
+      end;
+
+      // Timeout check - if we've been waiting too long, assume it's done
+      if i > 150 then
+      begin
+        WriteLn('[DEBUG]: Timeout reached, assuming potion making is complete');
+        Break;
+      end;
+
+      Wait(50);  // Wait longer between checks
+    end;
+
+    // Reset the flag when we're done
+    Self.IsMakingPotions := False;
+
+    WriteLn('[DEBUG]: Potion making complete, inventory count: ', Inventory.Count());
+    if Random(3) = 0 then
+      Self.DoAntiban();
+    WL.Activity.Restart();
+    Result := True;
+  end;
+end;
+
+function TPotionMaker.OpenBank(): Boolean;
+begin
+  Result := Bank.Open(ERSBankLocation.GRAND_EXCHANGE);
+  if Result then
+    Self.LastBankAction := GetTickCount();
+end;
+
+procedure TPotionMaker.Run(maxActions: UInt32; maxTime: UInt64);
+begin
+  Self.Init(maxActions, maxTime);
+  repeat
+    Self.State := Self.GetState();
+    Self.SetAction(ToStr(Self.State));
+
+    case Self.State of
+      WAIT_STATE:     Wait(100, 150);  // Reduced wait time
+      OPEN_BANK:
+        if not Self.OpenBank() then
+      begin
+          WriteLn('[DEBUG]: Failed to open bank. Retrying...');
+          Wait(100, 150);  // Reduced wait time
+      end;
+
+      // **Deposit-first**: clears finished pots or leftover ingredients (e.g., un-used wine)
+      DEPOSIT_ALL:
+        if Bank.IsOpen() then
+      begin
+          Bank.DepositAll();
+          // Faster deposit completion check
+          repeat
+            Wait(25);  // Reduced wait time
+          until Inventory.Count() = 0;
+          Self.LastBankAction := GetTickCount();
+        end;
+
+      WITHDRAW_ITEMS:
+        if Bank.IsOpen() then
+        begin
+          if Self.FastWithdraw then
+          begin
+            if not Inventory.ContainsItem(Self.UnfinishedName) then
+              Self.BankEmpty := not Self.Withdraw(Self.UnfinishedPotion);
+            Wait(15, 35);  // Reduced wait time
+            if not Inventory.ContainsItem(Self.SecondaryName) then
+              Self.BankEmpty := not Self.Withdraw(Self.SecondaryIngredient);
+            Wait(15, 35);  // Reduced wait time
+            if Inventory.ContainsItem(Self.UnfinishedName) and Inventory.ContainsItem(Self.SecondaryName) then
+      begin
+              RSInterface.Close();
+              Self.LastBankAction := GetTickCount();
+      end;
+          end
+          else
+      begin
+            if not Inventory.ContainsItem(Self.UnfinishedName) then
+              Self.BankEmpty := not Self.Withdraw(Self.UnfinishedPotion);
+            if not Inventory.ContainsItem(Self.SecondaryName) then
+              Self.BankEmpty := not Self.Withdraw(Self.SecondaryIngredient);
+            Self.LastBankAction := GetTickCount();
+          end;
+        end;
+
+      CLOSE_INTERFACE:
+      begin
+          RSInterface.Close();
+          Wait(50, 100);  // Small wait after closing interface
+      end;
+      MAKE_POTIONS:    Self.MakePotions();
+      OUT_OF_SUPPLIES, END_SCRIPT: Break;
+    end;
+
+  until Self.ShouldStop();
+end;
+
+var
+  PotionMaker: TPotionMaker;
+begin
+  PotionMaker.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
