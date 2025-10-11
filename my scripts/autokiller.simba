@@ -1,4 +1,6 @@
+{$I SRL-T/osr.simba}
 {$I WaspLib/osr.simba}
+{$I WaspLib/optional/handlers/combathandler.simba}
 
 type
   TFightConfig = record(TScriptForm)
