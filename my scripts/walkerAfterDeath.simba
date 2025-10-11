@@ -1,0 +1,85 @@
+{$I WaspLib/osr.simba}
+
+type
+  TDestinationConfig = record(TScriptForm)
+    DestinationSelector: TLabeledCombobox; // Dropdown for destinations
+  end;
+
+var
+  destination: TPoint;
+  DestinationConfig: TDestinationConfig;
+
+procedure SetDestination();
+var
+  selected: string;
+begin
+  // Get the selected destination from the combobox
+  selected := DestinationConfig.DestinationSelector.GetText();
+
+  // Update destination based on the selection
+  case selected of
+    'Lumbridge': destination := [8713+Random(-5,5), 37548+Random(-5,5)];
+    'Grand Exchange': destination := [8562+Random(-6,6), 36510+Random(-12,10)];
+    'Edgeville': destination := [8292+Random(-16,16), 36420+Random(-6,6)];
+    'Varrock Square': destination := [8734+Random(-7,7), 36714+Random(-8,8)];
+    'Barbarian Village': destination := [8302+Random(-5,5), 36748+Random(-6,6)];
+    'Draynor': destination := [8270+Random(-14,14), 37436+Random(-4,4)];
+    'Falador': destination := [7932+Random(-24,24), 36982+Random(-8,8)];
+    'Port Sarim': destination := [8056+Random(-20,20), 37404+Random(-6,6)];
+    'Rimmington': destination := [7730+Random(-6,6), 37542+Random(-16,16)];
+    'Wizards Tower': destination := [8357+Random(-3,3), 37694+Random(-52,52)];
+    'Varroks east mine': destination := [9060+Random(-4,4), 36938+Random(-4,0)];
+    'Dwarven mine': destination := [7970+Random(-6,6), 36634+Random(-8,8)];
+    'Gate east of varrok': destination := [9172+Random(-8,8), 36558+Random(-4,4)];
+  else
+    Writeln('Invalid destination selected!');
+  end;
+
+  Writeln('Destination set to: ', selected, ' (', destination.X, ', ', destination.Y, ')');
+end;
+
+procedure WALK();
+begin
+  Map.SetupChunks([[[44, 55, 52, 48],[0]]]); // F2P area
+  if Map.Walker.WebWalk(Destination) then
+    Writeln('Arrived at destination')
+end;
+
+procedure TDestinationConfig.StartScript(sender: TObject); override;
+begin
+  SetDestination(); // Set the destination based on UI selection
+  inherited;
+end;
+
+
+procedure TDestinationConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('Destination Selector');
+  Self.Start.setOnClick(@Self.StartScript);
+
+  Self.AddTab('Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+
+  // Create destination selector combobox
+  with Self.DestinationSelector do
+  begin
+    Create(tab);
+    SetCaption('Choose Destination:');
+    SetLeft(30);
+    SetTop(50);
+    SetWidth(200);
+    AddItemArray(['Lumbridge', 'Grand Exchange', 'Edgeville', 'Varrock Square',
+                  'Barbarian Village', 'Draynor', 'Falador', 'Port Sarim', 'Rimmington',
+                  'Varroks east mine', 'Gate east of varrok', 'Dwarven mine', 'Wizards Tower']);
+    SetItemIndex(0); // Default to Lumbridge
+  end;
+
+  inherited;
+end;
+
+begin
+  DestinationConfig.Run();
+  WALK();
+end.

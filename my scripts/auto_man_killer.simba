@@ -3,15 +3,16 @@
 
 {$I WaspLib/osr.simba}
 
-var
-  duration: Integer = 20;
-  AllCombatStyles: Boolean = False;
-
 type
   TRandomEnemyConfig = record(TScriptForm)
   durationBox: TLabeledEdit;
   AllCombat: TLabeledCheckbox;
   end;
+
+var
+  duration: Integer = 20;
+  AllCombatStyles: Boolean = False;
+
 
 procedure TRandomEnemyConfig.StartScript(sender: TObject); override;
 begin

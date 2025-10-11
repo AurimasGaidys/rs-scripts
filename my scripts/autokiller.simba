@@ -1,0 +1,70 @@
+{$I WaspLib/osr.simba}
+
+type
+  FightConfig = record(TScriptForm)
+    EnemySelector: TLabeledCombobox; // Dropdown for destinations
+  end;
+
+var
+  enemy: string;
+  FightConfig: TFightConfig;
+
+procedure SetEnemy();
+var
+  selected: string;
+begin
+  selected := FightConfig.DestinationSelector.GetText();
+
+  // Update destination based on the selection
+  case selected of
+    'Man': enemy := 'Man';
+    'Skeleton': enemy := 'Skeleton';
+  else
+    Writeln('Invalid destination selected!');
+  end;
+
+  Writeln('Destination set to: ', selected, ' (', destination.X, ', ', destination.Y, ')');
+end;
+
+procedure FIGHT();
+begin
+  WriteLn(timerr.ElapsedTime/60000, '/',duration,' minutes');
+end;
+
+procedure TFightConfig.StartScript(sender: TObject); override;
+begin
+  SetEnemy();
+  inherited;
+end;
+
+procedure TFightConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('Enemy Selector');
+  Self.Start.setOnClick(@Self.StartScript);
+
+  Self.AddTab('Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+
+  // Create destination selector combobox
+  with Self.DestinationSelector do
+  begin
+    Create(tab);
+    SetCaption('Choose Destination:');
+    SetLeft(30);
+    SetTop(50);
+    SetWidth(200);
+    AddItemArray(['Man', 'Skeleton', 'Edgeville', 'Varrock Square',
+                  'Barbarian Village', 'Draynor', 'Falador', 'Port Sarim', 'Rimmington',
+                  'Varroks east mine', 'Gate east of varrok', 'Dwarven mine', 'Wizards Tower']);
+    SetItemIndex(0); // Default to Lumbridge
+  end;
+
+  inherited;
+end;
+
+begin
+  FightConfig.Run();
+  FIGHT();
+end.
