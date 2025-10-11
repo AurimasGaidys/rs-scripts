@@ -1,7 +1,7 @@
 {$I WaspLib/osr.simba}
 
 type
-  FightConfig = record(TScriptForm)
+  TFightConfig = record(TScriptForm)
     EnemySelector: TLabeledCombobox; // Dropdown for destinations
   end;
 
@@ -13,7 +13,7 @@ procedure SetEnemy();
 var
   selected: string;
 begin
-  selected := FightConfig.DestinationSelector.GetText();
+  selected := FightConfig.EnemySelector.GetText();
 
   // Update destination based on the selection
   case selected of
@@ -23,12 +23,12 @@ begin
     Writeln('Invalid destination selected!');
   end;
 
-  Writeln('Destination set to: ', selected, ' (', destination.X, ', ', destination.Y, ')');
+  Writeln('Destination set to: ', selected);
 end;
 
 procedure FIGHT();
 begin
-  WriteLn(timerr.ElapsedTime/60000, '/',duration,' minutes');
+  WriteLn(' pew pew');
 end;
 
 procedure TFightConfig.StartScript(sender: TObject); override;
@@ -48,7 +48,7 @@ begin
   tab := Self.Tabs[High(Self.Tabs)];
 
   // Create destination selector combobox
-  with Self.DestinationSelector do
+  with Self.EnemySelector do
   begin
     Create(tab);
     SetCaption('Choose Destination:');
