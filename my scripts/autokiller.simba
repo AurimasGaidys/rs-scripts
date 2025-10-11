@@ -66,6 +66,8 @@ var
 
 procedure FIGHT();
 begin
+  map.setupchunks([[[46,51,48,49],[0]]]);
+  npcs.Setup(map.npcs,@map.Walker);
   npcarr := NPCs.getAll('Man');
   npc := npcArr.findNearest(map.Position);
   options.SetNPCAttackOption(ERSAttackOption.ALWAYS_LEFT_CLICK);
