@@ -1,7 +1,7 @@
 {$DEFINE SCRIPT_ID := 'a1b2c3d4-5e6f-7g8h-9i0j-k1l2m3n4o5p6'}
 {$UNDEF SCRIPT_REVISION}{$DEFINE SCRIPT_REVISION := '1.0'}
 program AutoManKiller;
-{$I SRL-T/OSR.simba}
+{$I SRL-T/osr.simba}
 {$I WaspLib/osr.simba}
 
 type
@@ -12,21 +12,17 @@ type
   );
 
 type
-  TManKiller = record
+  TManKiller = record(TBaseWalkerScript)
     State: EState;
-    Version, Status: String;
     TargetNPC: String;
     HealthThreshold: Int32;
-    StartExp, StartTime: Int64;
     
     // Timers
     CombatTimer, LootTimer, AntiBanTimer: TCountDown;
-    RuntimeTimer: TStopwatch;
     
     // Settings
     FoodName: String;
     LootItems: TStringArray;
-    MaxRunTime: Int64;
     EnableLooting, EnableAntiBan: Boolean;
     
     // Combat area
@@ -35,57 +31,71 @@ type
     
     // Statistics
     KillCount, FoodConsumed, ItemsLooted: Int32;
+    
+    // Methods
+    procedure DoRandomAction();
+    function NeedFood(): Boolean;
+    procedure EatFood();
+    function FindAndAttackMan(): Boolean;
+    procedure CheckForLoot();
+    function InCombat(): Boolean;
+    function WalkToCombatArea(): Boolean;
+    procedure HandleEmergency();
+    function GetState(): EState;
+    procedure Run();
   end;
 
 var
   Bot: TManKiller;
-  GUI: TScriptForm;
 
-// Logging procedure
-procedure TManKiller.WriteMsg(Message: String);
+// Override Init method properly
+procedure TManKiller.Init(MaxActions: UInt32; MaxTime: UInt64); override;
 begin
-  WriteLn('[ManKiller]: ' + Message);
+  inherited;
+  
+  Self.Name := 'Man Killer Bot';
+  Self.Version := 'v' + {$MACRO SCRIPT_REVISION};
+  
+  // Default settings
+  Self.TargetNPC := 'Man';
+  Self.HealthThreshold := 50;
+  Self.FoodName := 'Bread';
+  Self.LootItems := ['Coins', 'Runes', 'Arrows'];
+  Self.EnableLooting := True;
+  Self.EnableAntiBan := True;
+  
+  // Set combat area (Lumbridge area example - adjust coordinates as needed)
+  Self.CombatArea := [100, 100, 200, 200];
+  Self.SafeSpot := [150, 150];
+  
+  // Initialize timers
+  Self.CombatTimer.Setup(5 * ONE_SECOND);
+  Self.LootTimer.Setup(3 * ONE_SECOND);
+  Self.AntiBanTimer.Setup(2 * ONE_MINUTE);
+  
+  // Initialize stats
+  Self.KillCount := 0;
+  Self.FoodConsumed := 0;
+  Self.ItemsLooted := 0;
+  
+  WriteLn('[ManKiller]: Initialization complete!');
 end;
 
-// Initialize antiban system
+// Initialize antiban system - simplified for WaspLib
 procedure TManKiller.SetupAntiBan();
 begin
-  Antiban.AddTask(ONE_MINUTE * 2, @Mouse.RandomMovement);
-  Antiban.AddTask(ONE_MINUTE * 5, @Self.DoRandomAction);
-  Antiban.AddBreak(ONE_MINUTE * 15, ONE_MINUTE * 3, 0.2, 1.0);
+  // WaspLib handles most antiban automatically via DoAntiban() method
+  WriteLn('[ManKiller]: Antiban system ready');
 end;
 
-// Random antiban actions
+// Random antiban actions - use WaspLib's built-in antiban
 procedure TManKiller.DoRandomAction();
-var
-  action: Int32;
 begin
-  action := Random(4);
-  case action of
-    0: 
-    begin
-      Self.WriteMsg('Antiban: Random camera movement');
-      Minimap.SetCompassAngle(Random(360));
-      Wait(SRL.NormalRange(1000, 3000));
-    end;
-    1:
-    begin
-      Self.WriteMsg('Antiban: Check stats');
-      Stats.Open();
-      Wait(SRL.NormalRange(2000, 4000));
-      MainScreen.CloseInterface();
-    end;
-    2:
-    begin
-      Self.WriteMsg('Antiban: Random mouse movement');
-      Mouse.RandomMovement();
-    end;
-    3:
-    begin
-      Self.WriteMsg('Antiban: Brief pause');
-      Wait(SRL.NormalRange(2000, 5000));
-    end;
-  end;
+  Self.Action := 'Doing antiban';
+  if Self.DoAntiban() then
+    WriteLn('[ManKiller]: Performed antiban action')
+  else
+    Wait(SRL.NormalRange(2000, 5000)); // Brief pause if no antiban performed
 end;
 
 // Check if we need food
@@ -99,13 +109,13 @@ procedure TManKiller.EatFood();
 begin
   if Inventory.ClickItem(Self.FoodName) then
   begin
-    Self.WriteMsg('Eating ' + Self.FoodName);
+    WriteLn('[ManKiller]: Eating ' + Self.FoodName);
     Inc(Self.FoodConsumed);
     Wait(SRL.NormalRange(1800, 2500));
   end
   else
   begin
-    Self.WriteMsg('No food found! Emergency logout.');
+    WriteLn('[ManKiller]: No food found! Emergency logout.');
     Self.State := HANDLE_EMERGENCY;
   end;
 end;
@@ -129,7 +139,7 @@ begin
     begin
       if NPC.Click(['Attack']) then
       begin
-        Self.WriteMsg('Attacking Man');
+        WriteLn('[ManKiller]: Attacking Man');
         Result := True;
         Self.CombatTimer.Setup(15 * ONE_SECOND);
         Self.CombatTimer.Restart();
@@ -140,7 +150,7 @@ begin
   end;
   
   if not Result then
-    Self.WriteMsg('No attackable Man found nearby');
+    WriteLn('[ManKiller]: No attackable Man found nearby');
 end;
 
 // Check for loot on ground
@@ -166,13 +176,13 @@ begin
       begin
         if Inventory.IsFull() then
         begin
-          Self.WriteMsg('Inventory full, cannot loot ' + Item.Name);
+          WriteLn('[ManKiller]: Inventory full, cannot loot ' + Item.Name);
           Exit;
         end;
         
         if Item.Click() then
         begin
-          Self.WriteMsg('Looting: ' + Item.Name);
+          WriteLn('[ManKiller]: Looting: ' + Item.Name);
           Inc(Self.ItemsLooted);
           Wait(SRL.NormalRange(1000, 2000));
         end;
@@ -182,11 +192,15 @@ begin
   end;
 end;
 
-// Check if we're in combat
+// Check if we're in combat - use proper combat detection
 function TManKiller.InCombat(): Boolean;
 begin
-  Result := Minimap.GetHPLevel() < Minimap.GetHPLevel() or 
-            (RSClient.Image().FindColor($FF0000, MainScreen.Bounds()) > 0); // Red splat detection
+  // Check if player is interacting (in combat animation)
+  Result := Minimap.IsPlayerMoving() or (Minimap.GetHPPercent() < 100);
+  
+  // Additional check: look for combat interface or NPC interaction
+  if not Result then
+    Result := MainScreen.IsUpText(['Attack', 'Fight']);
 end;
 
 // Walk to combat area if not there
@@ -198,7 +212,7 @@ begin
   
   if not Self.CombatArea.Contains(MyPos) then
   begin
-    Self.WriteMsg('Walking to combat area');
+    WriteLn('[ManKiller]: Walking to combat area');
     Mouse.Click(Self.SafeSpot, MOUSE_LEFT);
     Minimap.WaitFlag();
     Result := True;
@@ -210,7 +224,7 @@ end;
 // Handle emergency situations
 procedure TManKiller.HandleEmergency();
 begin
-  Self.WriteMsg('Emergency situation - logging out');
+  WriteLn('[ManKiller]: Emergency situation - logging out');
   if Inventory.ClickItem('Varrock teleport') then
   begin
     Wait(3000);
@@ -221,43 +235,29 @@ begin
   TerminateScript('Emergency logout');
 end;
 
-// Display statistics
-procedure TManKiller.ShowStats();
+// Override BuildTextReport for custom stats display
+function TManKiller.BuildTextReport(): TStringArray; override;
 var
-  XPGained: Int64;
-  Runtime: Int64;
-  XPPerHour: Int64;
+  Runtime: UInt64;
 begin
-  XPGained := XPBar.Read() - Self.StartExp;
-  Runtime := GetTimeRunning();
+  Runtime := Self.TimeRunning.ElapsedTime();
   
-  if Runtime > 0 then
-    XPPerHour := Round((XPGained * 3600000) / Runtime)
-  else
-    XPPerHour := 0;
-    
-  WriteLn('=== Man Killer Statistics ===');
-  WriteLn('Runtime: ' + SRL.MsToTime(Runtime, Time_Short));
-  WriteLn('Kills: ' + IntToStr(Self.KillCount));
-  WriteLn('XP Gained: ' + IntToStr(XPGained));
-  WriteLn('XP/Hour: ' + IntToStr(XPPerHour));
-  WriteLn('Food Consumed: ' + IntToStr(Self.FoodConsumed));
-  WriteLn('Items Looted: ' + IntToStr(Self.ItemsLooted));
-  WriteLn('=============================');
+  Result += '[===============================]';
+  Result += '[ ' + Self.Name + ' ]';
+  Result += '[===============================]';
+  Result += '[ Runtime    : ' + SRL.MsToTime(Runtime, Time_Short) + ' ]';
+  Result += '[ Actions    : ' + ToStr(Self.TotalActions) + ' ]';
+  Result += '[ Kills      : ' + ToStr(Self.KillCount) + ' ]';
+  Result += '[ Food eaten : ' + ToStr(Self.FoodConsumed) + ' ]';
+  Result += '[ Items looted: ' + ToStr(Self.ItemsLooted) + ' ]';
+  Result += '[===============================]';
 end;
 
 // Determine current state
 function TManKiller.GetState(): EState;
 begin
-  // Check if logged in - if not, terminate script
-  if not RSClient.IsLoggedIn() then
-  begin
-    Self.WriteMsg('Player not logged in. Please log in manually.');
-    TerminateScript('Player not logged in');
-  end;
-    
-  // Check if runtime exceeded
-  if (Self.MaxRunTime > 0) and (GetTimeRunning() > Self.MaxRunTime) then
+  // Use WaspLib's built-in should stop check
+  if Self.ShouldStop() then
     Exit(END_SCRIPT);
     
   // Check for emergency (no food and low HP)
@@ -286,51 +286,6 @@ begin
     
   // Default: find and attack target
   Result := FIND_TARGET;
-end;
-
-// Initialize the bot
-procedure TManKiller.Init();
-begin
-  Self.Version := 'v' + {$MACRO SCRIPT_REVISION};
-  Self.WriteMsg('Initializing Man Killer ' + Self.Version);
-  
-  // Default settings
-  Self.TargetNPC := 'Man';
-  Self.HealthThreshold := 50;
-  Self.FoodName := 'Bread';
-  Self.LootItems := ['Coins', 'Runes', 'Arrows'];
-  Self.EnableLooting := True;
-  Self.EnableAntiBan := True;
-  Self.MaxRunTime := 0; // Unlimited
-  
-  // Set combat area (Lumbridge area example)
-  Self.CombatArea := [100, 100, 200, 200]; // Adjust coordinates as needed
-  Self.SafeSpot := Point(150, 150); // Adjust as needed
-  
-  // Initialize timers
-  Self.CombatTimer.Setup(5 * ONE_SECOND);
-  Self.LootTimer.Setup(3 * ONE_SECOND);
-  Self.AntiBanTimer.Setup(2 * ONE_MINUTE);
-  Self.RuntimeTimer.Start();
-  
-  // Setup antiban
-  Self.SetupAntiBan();
-  
-  // Set mouse settings
-  Mouse.Speed := SRL.NormalRange(12, 18);
-  Mouse.MissChance := 3;
-  Mouse.Distribution := MOUSE_DISTRIBUTION_GAUSS;
-  
-  // Record starting stats
-  Self.StartExp := XPBar.Read();
-  Self.StartTime := GetTimeRunning();
-  
-  // Initialize stats
-  Self.KillCount := 0;
-  Self.FoodConsumed := 0;
-  Self.ItemsLooted := 0;
-  
-  Self.WriteMsg('Initialization complete!');
 end;
 
 // Main execution loop
@@ -396,124 +351,27 @@ begin
       
       END_SCRIPT:
       begin
-        Self.WriteMsg('Max runtime reached. Ending script.');
-        Self.ShowStats();
-        TerminateScript('Script completed');
+        WriteLn('[ManKiller]: Script stopping...');
+        Break;
       end;
-    end;
-    
-    // Show stats every 5 minutes
-    if StatsTimer.IsFinished() then
-    begin
-      Self.ShowStats();
-      StatsTimer.Restart();
     end;
     
     // Small delay to prevent CPU overuse
     Wait(SRL.NormalRange(50, 150));
   end;
-end;
-
-// GUI Setup
-procedure TScriptForm.StartScript(sender: TObject); override;
-begin
-  inherited;
-  Self.Form.Close();
-  Bot.WriteMsg('Starting Man Killer from GUI');
-end;
-
-function TScriptForm.CreateSettingsTab(): TTabSheet;
-var
-  HealthEdit, FoodEdit, RuntimeEdit: TLabeledEdit;
-  LootCheckbox, AntiBanCheckbox: TLabeledCheckBox;
-begin
-  Result.Init(nil);
-  Result.SetCaption('Settings');
   
-  with HealthEdit do
-  begin
-    Create(Result);
-    SetLeft(20);
-    SetTop(20);
-    SetCaption('Health Threshold (%)');
-    SetText('50');
-    SetName('health_edit');
-  end;
-  
-  with FoodEdit do
-  begin
-    Create(Result);
-    SetLeft(20);
-    SetTop(70);
-    SetCaption('Food Name');
-    SetText('Bread');
-    SetName('food_edit');
-  end;
-  
-  with RuntimeEdit do
-  begin
-    Create(Result);
-    SetLeft(20);
-    SetTop(120);
-    SetCaption('Max Runtime (minutes, 0 = unlimited)');
-    SetText('60');
-    SetName('runtime_edit');
-  end;
-  
-  with LootCheckbox do
-  begin
-    Create(Result);
-    SetLeft(20);
-    SetTop(170);
-    SetCaption('Enable Looting');
-    SetChecked(True);
-    SetName('loot_checkbox');
-  end;
-  
-  with AntiBanCheckbox do
-  begin
-    Create(Result);
-    SetLeft(20);
-    SetTop(200);
-    SetCaption('Enable Anti-Ban');
-    SetChecked(True);
-    SetName('antiban_checkbox');
-  end;
-end;
-
-procedure TScriptForm.Setup(caption: String = 'Script Form'; size: TPoint = [500, 400]; allowResize: Boolean = False); override;
-var
-  StartButton: TButton;
-begin
-  inherited;
-  
-  Self.Start.setVisible(False);
-  with StartButton do
-  begin
-    Create(Self.Form);
-    SetBounds(Self.Form.GetRight-120, Self.Form.GetBottom-50, 100, 40);
-    SetCaption('Start Bot');
-    SetOnClick(@Self.StartScript);
-  end;
-  
-  Self.AddTab(CreateSettingsTab());
+  WriteLn('[ManKiller]: Script completed!');
 end;
 
 // Main program execution
 begin
-  Login.PlayerIndex := 0;
-  
   WriteLn('=================================');
   WriteLn('    Auto Man Killer v1.0');
   WriteLn('    Attacks Man NPCs in OSRS');
   WriteLn('=================================');
   WriteLn('');
   
-  // Show GUI for configuration
-  GUI.Setup('Auto Man Killer', [500, 350]);
-  GUI.Run();
-  
   // Initialize and run the bot
-  Bot.Init();
+  Bot.Init(0, 4 * ONE_HOUR); // No action limit, 4 hour time limit
   Bot.Run();
 end.
