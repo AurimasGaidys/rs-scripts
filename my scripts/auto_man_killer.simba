@@ -1,19 +1,19 @@
-{$DEFINE SCRIPT_ID := '574aff7a-4b67-463b-8f89-18a55ee5d613'}
+{$DEFINE SCRIPT_ID := 'test'}
 {$DEFINE SCRIPT_REVISION := '1'}
 
 {$I WaspLib/osr.simba}
 
 var
   duration: Integer = 20;
-  AllCombatStyles: Boolean = True;
+  AllCombatStyles: Boolean = False;
 
 type
-  TSeagullConfig = record(TScriptForm)
+  TRandomEnemyConfig = record(TScriptForm)
   durationBox: TLabeledEdit;
   AllCombat: TLabeledCheckbox;
   end;
 
-procedure TSeagullConfig.StartScript(sender: TObject); override;
+procedure TRandomEnemyConfig.StartScript(sender: TObject); override;
 begin
   duration := StrToInt(Self.durationBox.GetText());
   AllCombatStyles := self.AllCombat.IsChecked();
@@ -26,11 +26,11 @@ function SetUpScreen() {
   Self.CreateAccountManager(tab);
 }
 
-procedure TSeagullConfig.Run(); override;
+procedure TRandomEnemyConfig.Run(); override;
 var
   tab: TTabSheet;
 begin
-  Self.Setup('Seagull Slayer Config');
+  Self.Setup('RandomEnemy Slayer Config');
   Self.Start.SetOnClick(@Self.StartScript);
 
   with Self.AllCombat do
@@ -87,7 +87,7 @@ begin
 end;
 
 var
-  config: TSeagullConfig;
+  config: TRandomEnemyConfig;
   npc: TRSNPCV2;
   npcarr: TRSNPCV2Array;
   Timerr: TStopwatch;
