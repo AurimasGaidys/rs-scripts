@@ -6,7 +6,7 @@ program AutoManKiller;
 
 type
   EState = (
-    LOGIN_PLAYER, FIND_TARGET, ATTACK_TARGET, WAIT_COMBAT, 
+    FIND_TARGET, ATTACK_TARGET, WAIT_COMBAT, 
     EAT_FOOD, LOOT_DROPS, HANDLE_EMERGENCY, DO_ANTIBAN, 
     WALK_TO_AREA, END_SCRIPT
   );
@@ -249,9 +249,12 @@ end;
 // Determine current state
 function TManKiller.GetState(): EState;
 begin
-  // Check if logged in
+  // Check if logged in - if not, terminate script
   if not RSClient.IsLoggedIn() then
-    Exit(LOGIN_PLAYER);
+  begin
+    Self.WriteMsg('Player not logged in. Please log in manually.');
+    TerminateScript('Player not logged in');
+  end;
     
   // Check if runtime exceeded
   if (Self.MaxRunTime > 0) and (GetTimeRunning() > Self.MaxRunTime) then
@@ -318,10 +321,6 @@ begin
   Mouse.MissChance := 3;
   Mouse.Distribution := MOUSE_DISTRIBUTION_GAUSS;
   
-  // Login if needed
-  if not RSClient.IsLoggedIn() then
-    Login.LoginPlayer();
-    
   // Record starting stats
   Self.StartExp := XPBar.Read();
   Self.StartTime := GetTimeRunning();
@@ -347,12 +346,6 @@ begin
     Self.State := Self.GetState();
     
     case Self.State of
-      LOGIN_PLAYER:
-      begin
-        Self.WriteMsg('Logging in...');
-        Login.LoginPlayer();
-      end;
-      
       FIND_TARGET:
       begin
         if Self.FindAndAttackMan() then
