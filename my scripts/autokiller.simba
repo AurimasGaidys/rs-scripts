@@ -79,7 +79,21 @@ begin
     WriteLn(' pew pew');
 end;
 
-
+function TRSMainscreen.IsInCombat(): Boolean;
+var
+  timer: TCountdown;
+  hits: Integer;
+begin
+  timer.Init(3000);
+  while not timer.IsFinished do
+  begin
+    hits := Length(Mainscreen.FindHitsplats(Mainscreen.GetPlayerBox.Expand(15)));
+    if hits > 0 then Exit(True);
+    if XPBar.EarnedXP then Exit(True);
+  end;
+  Result := False;
+  WriteLn('Currently not in combat');
+end;
 
 function TRSNPCV2Array.findNearest(point:TPoint): TRSNPCV2;
 var
@@ -94,6 +108,7 @@ begin
       dist := NPC.Coordinates[0].DistanceTo(point);
     end;
 end;
+
 
 
 begin
