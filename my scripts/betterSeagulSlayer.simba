@@ -389,7 +389,7 @@ var
   MinutesUntilBreak: Integer;
 begin
   MinutesUntilBreak := Random(BREAK_INTERVAL_MIN, BREAK_INTERVAL_MAX);
-  NextBreakTime := GetTickCount64() + (MinutesUntilBreak * 60000);
+  NextBreakTime := GetTickCount() + (MinutesUntilBreak * 60000);
   WriteLn('Next break scheduled in ', MinutesUntilBreak, ' minutes');
 end;
 
@@ -400,7 +400,7 @@ begin
   if not TakeBreaks then Exit;
   if IsOnBreak then Exit;
   
-  if GetTickCount64() >= NextBreakTime then
+  if GetTickCount() >= NextBreakTime then
   begin
     BreakDuration := Random(BREAK_DURATION_MIN, BREAK_DURATION_MAX);
     WriteLn('===== TAKING BREAK FOR ', BreakDuration, ' MINUTES =====');
@@ -420,11 +420,11 @@ end;
 // ============================================================================
 procedure InitStats();
 begin
-  Stats.StartTime := GetTickCount64();
+  Stats.StartTime := GetTickCount();
   Stats.TotalKills := 0;
   Stats.DeathCount := 0;
   Stats.FoodEaten := 0;
-  Stats.LastXPTime := GetTickCount64();
+  Stats.LastXPTime := GetTickCount();
   Stats.CurrentStyle := 0;
   
   WriteLn('========================================');
@@ -436,7 +436,7 @@ procedure PrintStats();
 var
   RunTime, KillsPerHour: Double;
 begin
-  RunTime := (GetTickCount64() - Stats.StartTime) / 3600000;  // Hours
+  RunTime := (GetTickCount() - Stats.StartTime) / 3600000;  // Hours
   
   if RunTime > 0 then
     KillsPerHour := Stats.TotalKills / RunTime
@@ -458,7 +458,7 @@ procedure CheckStuck();
 var
   TimeSinceXP: Int64;
 begin
-  TimeSinceXP := GetTickCount64() - Stats.LastXPTime;
+  TimeSinceXP := GetTickCount() - Stats.LastXPTime;
   
   if TimeSinceXP > MAX_NO_XP_TIME then
   begin
@@ -469,7 +469,7 @@ begin
     Map.Walker.WebWalk(Map.Position.Random(-10, 10), 5);
     Wait(Random(2000, 4000));
     
-    Stats.LastXPTime := GetTickCount64(); // Reset timer
+    Stats.LastXPTime := GetTickCount(); // Reset timer
   end;
 end;
 
@@ -526,7 +526,7 @@ begin
       if WaitUntil(not Mainscreen.IsInCombat(), COMBAT_CHECK_INTERVAL, COMBAT_TIMEOUT) then
       begin
         Inc(Stats.TotalKills);
-        Stats.LastXPTime := GetTickCount64(); // Update XP time
+        Stats.LastXPTime := GetTickCount(); // Update XP time
         WriteLn('Kill #', Stats.TotalKills, ' completed');
         
         // Random post-kill delay
