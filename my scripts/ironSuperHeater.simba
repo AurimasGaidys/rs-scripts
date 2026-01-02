@@ -1,0 +1,160 @@
+{$DEFINE SCRIPT_ID := '66d75db9-5f27-486c-9407-3b94ae676e9b'}
+{$DEFINE SCRIPT_REVISION := '8'}
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+begin // Set default account
+  Login.PlayerIndex := 0;
+end;
+
+procedure TAntiban.Setup(); override;
+begin
+  Self.Skills := [ERSSkill.SMITHING, ERSSkill.MAGIC,  ERSSkill.DEFENCE, ERSSkill.TOTAL];
+  Self.MinZoom := 10;
+  Self.MaxZoom := 90;
+  inherited;
+end;
+
+var
+  CurrentTask: string                   = 'Iron';        // Select bar
+  USE_COALBAG: Boolean                  = False;         // Steel,Mithril,Adamantite,Runite
+  USE_GUI: Boolean                      = True;          // Should use Wasp GUI
+  MOUSEOVERRIDE: Int32                  = 15;            // Set movement
+  CastAttemptReset: Integer             = 3;             // How many cast fails before bank
+  CastRune: String                      = 'Nature rune'; // If Bryophyta then change to 'Fire rune'
+
+type
+  EState = (
+  LEVEL_UP,
+  CLOSE_CONTEXT,
+  OPEN_BANK,
+  WITHDRAW_MATERIAL,
+  DEPOSIT_PRODUCT,
+  OPEN_COLLECT,
+  HANDLE_COLLECT,
+  CLOSE_INTERFACE,
+  CAST_SPELL,
+  END_SCRIPT);
+
+  TSuperHeater = record(TBaseBankScript)
+    State: EState;
+    Spell: ERSSpell;
+    Runes, PrimaryOre,
+    SecondaryOre, Bar: TRSBankItem;
+    SuperHeating: Boolean;
+    CoalBag: TRSBankItem;
+    ItemCount: Integer;
+    SpellCastFailed: Integer;
+  end;
+
+
+
+
+procedure TSuperHeaterConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+
+  Self.Setup('SuperHeater2 Config');
+  Self.Start.SetOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(tab);
+
+  with Self.BarSelector do
+  begin
+    Create(tab);
+    SetCaption('Bar type:');
+    SetLeft(TControl.AdjustToDPI(50));
+    SetTop(TControl.AdjustToDPI(200));
+    SetStyle(csDropDownList);
+    AddItemArray(BAR_TYPE);
+    SetItemIndex(1); // default to the first item
+  end;
+
+  with Self.CoalBagCheck do
+  begin
+    Create(tab);
+    SetCaption('Use Coal bag');
+    SetLeft(Self.BarSelector.GetRight() + TControl.AdjustToDPI(25));
+    SetTop(Self.BarSelector.GetTop() + TControl.AdjustToDPI(20));
+    SetChecked(USE_COALBAG);
+    SetHint('Optional if using Steel, Mithril, Adamantite, Runite');
+  end;
+
+  with Self.Instructions do
+  begin
+    Create(tab);
+    SetCaption('Instructions: Start with empty inventory and items visable in bank without scroll'
+    + LINEENDING + 'Optionally use coal bag if using Steel, Mithril, Adamantite, Runite');
+    SetLeft(Self.BarSelector.GetLeft() + TControl.AdjustToDPI(0));
+    SetTop(Self.BarSelector.GetBottom() + TControl.AdjustToDPI(20));
+  end;
+
+  Self.CreateVersionPanel(tab);
+  Self.CreateAntibanManager();
+  Self.CreateBankSettings();
+  Self.CreateWaspLibSettings();
+  Self.CreateAPISettings();
+
+  inherited;
+end;
+
+var
+  SuperHeaterConfig: TSuperHeaterConfig;
+
+begin
+  if USE_GUI then
+    SuperHeaterConfig.Run();
+  RSClient.RemoteInput.EnableRealInput;
+  SuperHeater.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
+
+
+
+
+type
+  EState = (
+  LEVEL_UP,
+  CLOSE_CONTEXT,
+  OPEN_BANK,
+  WITHDRAW_MATERIAL,
+  DEPOSIT_PRODUCT,
+  OPEN_COLLECT,
+  HANDLE_COLLECT,
+  CLOSE_INTERFACE,
+  CAST_SPELL,
+  END_SCRIPT);
+
+  TSuperHeater = record(TBaseBankScript)
+    State: EState;
+    Spell: ERSSpell;
+    Runes, PrimaryOre,
+    SecondaryOre, Bar: TRSBankItem;
+    SuperHeating: Boolean;
+    CoalBag: TRSBankItem;
+    ItemCount: Integer;
+    SpellCastFailed: Integer;
+  end;
+
+
+
+function TRSIronSuperHeater.CanRun(): Boolean; override;
+begin
+  if not inherited CanRun() then Exit(False);
+    if not Inventory.Contains('Iron ore') then
+      Exit(False);
+    if not Inventory.Contains('Coal') then
+      Exit(False);
+    if not Inventory.Contains('Tinderbox') then
+      Exit(False);
+    if not Equipment.Equipped('Iron full helm') then
+      Exit(False);
+    Result := True;
+end;
+
+procedure TRSIronSuperHeater.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  inherited;
+  if not Smithing.IsSmithingInterfaceOpen() then

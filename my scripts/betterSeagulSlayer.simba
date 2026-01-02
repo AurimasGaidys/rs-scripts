@@ -1,0 +1,746 @@
+{$DEFINE SCRIPT_ID := '574aff7a-4b67-463b-8f89-18a55ee5d613'}
+{$DEFINE SCRIPT_REVISION := '2'}
+
+{$I WaspLib/osr.simba}
+
+// ============================================================================
+// CONSTANTS - Centralized configuration values
+// ============================================================================
+const
+  COMBAT_TIMEOUT = 30000;           // Maximum time to wait in combat (30 seconds)
+  COMBAT_CHECK_INTERVAL = 50;       // How often to check combat status (50ms)
+  MIN_HEALTH_PERCENT = 50;          // Eat food when health drops below this percentage
+  MAX_RUNTIME_HOURS = 6;            // Maximum script runtime for safety
+  BREAK_INTERVAL_MIN = 60;          // Minimum minutes before taking a break
+  BREAK_INTERVAL_MAX = 120;         // Maximum minutes before taking a break
+  BREAK_DURATION_MIN = 5;           // Minimum break duration in minutes
+  BREAK_DURATION_MAX = 10;          // Maximum break duration in minutes
+  ANTIBAN_CHECK_INTERVAL = 45000;   // Check for antiban actions every 45 seconds
+  NPC_RESCAN_INTERVAL = 5;          // Re-scan for NPCs every X attacks
+  MAX_NO_XP_TIME = 300000;          // If no XP in 5 minutes, we're stuck
+
+// ============================================================================
+// GLOBAL CONFIGURATION VARIABLES
+// ============================================================================
+var
+  Duration: Integer = 20;                    // Duration in minutes to train each combat style
+  AllCombatStyles: Boolean = True;           // Flag to train all combat styles
+  UseFood: Boolean = True;                   // Enable food eating
+  FoodName: String = 'Lobster';              // Name of food to eat
+  UseAntiban: Boolean = True;                // Enable antiban features
+  RandomizeDuration: Boolean = True;         // Add ±5 minute variation to duration
+  TakeBreaks: Boolean = True;                // Enable break handler
+  
+// ============================================================================
+// STATISTICS TRACKING
+// ============================================================================
+type
+  TScriptStats = record
+    StartTime: Int64;
+    TotalKills: Integer;
+    DeathCount: Integer;
+    FoodEaten: Integer;
+    XPGained: array[0..2] of Integer;        // Attack, Strength, Defence
+    LastXPTime: Int64;
+    CurrentStyle: Integer;
+  end;
+
+var
+  Stats: TScriptStats;
+
+// ============================================================================
+// CONFIGURATION GUI TYPE
+// ============================================================================
+type
+  TSeagullConfig = record(TScriptForm)
+    DurationBox: TLabeledEdit;
+    AllCombat: TLabeledCheckbox;
+    UseFoodCheck: TLabeledCheckbox;
+    FoodNameBox: TLabeledEdit;
+    UseAntibanCheck: TLabeledCheckbox;
+    RandomizeDurationCheck: TLabeledCheckbox;
+    TakeBreaksCheck: TLabeledCheckbox;
+  end;
+
+// ============================================================================
+// StartScript - Called when user clicks the Start button
+// Validates and retrieves values from GUI form
+// ============================================================================
+procedure TSeagullConfig.StartScript(sender: TObject); override;
+var
+  InputDuration: Integer;
+begin
+  // Validate duration input
+  try
+    InputDuration := StrToInt(Self.DurationBox.GetText());
+    if (InputDuration <= 0) or (InputDuration > 180) then
+    begin
+      WriteLn('ERROR: Duration must be between 1 and 180 minutes');
+      Exit;
+    end;
+    Duration := InputDuration;
+  except
+    WriteLn('ERROR: Invalid duration value. Please enter a number.');
+    Exit;
+  end;
+
+  // Get all configuration values from GUI
+  AllCombatStyles := Self.AllCombat.IsChecked();
+  UseFood := Self.UseFoodCheck.IsChecked();
+  FoodName := Self.FoodNameBox.GetText();
+  UseAntiban := Self.UseAntibanCheck.IsChecked();
+  RandomizeDuration := Self.RandomizeDurationCheck.IsChecked();
+  TakeBreaks := Self.TakeBreaksCheck.IsChecked();
+
+  // Validate food name if food eating is enabled
+  if UseFood and (FoodName = '') then
+  begin
+    WriteLn('ERROR: Please specify a food name');
+    Exit;
+  end;
+
+  inherited;
+end;
+
+// ============================================================================
+// Run - Builds and displays the enhanced configuration GUI
+// ============================================================================
+procedure TSeagullConfig.Run(); override;
+var
+  Tab: TTabSheet;
+begin
+  Self.Setup('Seagull Slayer Config - Enhanced');
+  Self.Start.SetOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  Tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(Tab);
+
+  // Combat Style Checkbox
+  with Self.AllCombat do
+  begin
+    Create(Tab);
+    SetCaption('Train all combat styles?');
+    SetLeft(30);
+    SetTop(150);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(AllCombatStyles);
+  end;
+
+  // Duration Input
+  with Self.DurationBox do
+  begin
+    Create(Tab);
+    SetCaption('Minutes per style (1-180):');
+    SetLeft(30);
+    SetTop(180);
+    SetWidth(TControl.AdjustToDPI(200));
+    SetText(ToStr(Duration));
+  end;
+
+  // Food Usage Checkbox
+  with Self.UseFoodCheck do
+  begin
+    Create(Tab);
+    SetCaption('Use food for healing?');
+    SetLeft(30);
+    SetTop(210);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(UseFood);
+  end;
+
+  // Food Name Input
+  with Self.FoodNameBox do
+  begin
+    Create(Tab);
+    SetCaption('Food name:');
+    SetLeft(30);
+    SetTop(240);
+    SetWidth(TControl.AdjustToDPI(200));
+    SetText(FoodName);
+  end;
+
+  // Antiban Checkbox
+  with Self.UseAntibanCheck do
+  begin
+    Create(Tab);
+    SetCaption('Enable antiban features?');
+    SetLeft(30);
+    SetTop(270);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(UseAntiban);
+  end;
+
+  // Randomize Duration Checkbox
+  with Self.RandomizeDurationCheck do
+  begin
+    Create(Tab);
+    SetCaption('Randomize duration (±5 min)?');
+    SetLeft(30);
+    SetTop(300);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(RandomizeDuration);
+  end;
+
+  // Break Handler Checkbox
+  with Self.TakeBreaksCheck do
+  begin
+    Create(Tab);
+    SetCaption('Take random breaks?');
+    SetLeft(30);
+    SetTop(330);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(TakeBreaks);
+  end;
+
+  inherited;
+end;
+
+// ============================================================================
+// ENHANCED COMBAT DETECTION
+// ============================================================================
+function TRSMainscreen.IsInCombat(): Boolean;
+var
+  Timer: TCountdown;
+  Hits: Integer;
+begin
+  Timer.Init(3000);
+  
+  while not Timer.IsFinished do
+  begin
+    // Check for hitsplats
+    Hits := Length(Mainscreen.FindHitsplats(Mainscreen.GetPlayerBox.Expand(15)));
+    if Hits > 0 then Exit(True);
+    
+    // Check for XP gain
+    if XPBar.EarnedXP then Exit(True);
+    
+    // Additional check: if player is animating (attacking)
+    if Minimap.IsPlayerMoving() then Exit(True);
+  end;
+  
+  Result := False;
+end;
+
+// ============================================================================
+// ENHANCED NPC FINDING WITH ERROR HANDLING
+// ============================================================================
+function TRSNPCV2Array.FindNearest(Point: TPoint): TRSNPCV2;
+var
+  NPC: TRSNPCV2;
+  Dist, MinDist: Double;
+begin
+  // Handle empty array
+  if Length(Self) = 0 then
+  begin
+    WriteLn('ERROR: No NPCs found in array');
+    Exit;
+  end;
+
+  MinDist := $FFFFFF;
+  
+  for NPC in Self do
+  begin
+    // Skip NPCs that are in combat with other players
+    if NPC.InCombat then Continue;
+    
+    Dist := NPC.Coordinates[0].DistanceTo(Point);
+    if Dist < MinDist then
+    begin
+      Result := NPC;
+      MinDist := Dist;
+    end;
+  end;
+  
+  WriteLn('Found nearest seagull at distance: ', Round(MinDist));
+end;
+
+// ============================================================================
+// HEALTH MONITORING & FOOD EATING
+// ============================================================================
+function GetHealthPercent(): Integer;
+var
+  HPRatio: Double;
+begin
+  HPRatio := Minimap.GetHPPercent();
+  Result := Round(HPRatio);
+  WriteLn('Current health: ', Result, '%');
+end;
+
+function EatFood(): Boolean;
+var
+  FoodSlot: Integer;
+begin
+  Result := False;
+  
+  if not UseFood then Exit;
+  
+  WriteLn('Attempting to eat ', FoodName, '...');
+  
+  // Find food in inventory
+  if Inventory.FindItem(FoodName, FoodSlot) then
+  begin
+    Inventory.ClickSlot(FoodSlot);
+    Wait(Random(800, 1500));  // Random delay after eating
+    Inc(Stats.FoodEaten);
+    WriteLn('Food eaten. Total food consumed: ', Stats.FoodEaten);
+    Result := True;
+  end
+  else
+  begin
+    WriteLn('WARNING: Out of food! Consider stopping script.');
+  end;
+end;
+
+function CheckAndEat(): Boolean;
+var
+  CurrentHP: Integer;
+begin
+  Result := False;
+  
+  if not UseFood then Exit;
+  
+  CurrentHP := GetHealthPercent();
+  
+  if CurrentHP < MIN_HEALTH_PERCENT then
+  begin
+    WriteLn('Health below ', MIN_HEALTH_PERCENT, '%, eating food...');
+    Result := EatFood();
+  end;
+end;
+
+// ============================================================================
+// DEATH DETECTION
+// ============================================================================
+function IsDead(): Boolean;
+begin
+  // Check if we're at a respawn point or death screen
+  Result := Chat.FindMessage('Oh dear, you are dead!', [CHAT_COLOR_BLUE]);
+  
+  if Result then
+  begin
+    WriteLn('DEATH DETECTED! Incrementing death counter.');
+    Inc(Stats.DeathCount);
+  end;
+end;
+
+// ============================================================================
+// ANTIBAN FEATURES
+// ============================================================================
+procedure PerformAntiban();
+var
+  Action: Integer;
+begin
+  if not UseAntiban then Exit;
+  
+  Action := Random(0, 5);
+  
+  case Action of
+    0: // Random camera movement
+    begin
+      WriteLn('[ANTIBAN] Random camera movement');
+      Minimap.SetCompassAngle(Random(0, 360), Random(5, 15));
+      Wait(Random(500, 1500));
+    end;
+    
+    1: // Check skills tab
+    begin
+      WriteLn('[ANTIBAN] Checking skills tab');
+      if GameTabs.Open(ERSGameTab.STATS) then
+      begin
+        Wait(Random(1000, 3000));
+        GameTabs.Open(ERSGameTab.COMBAT);
+      end;
+    end;
+    
+    2: // Random mouse movement
+    begin
+      WriteLn('[ANTIBAN] Random mouse movement');
+      Mouse.Move(Box(100, 100, 700, 500).Random());
+      Wait(Random(300, 800));
+    end;
+    
+    3: // Brief idle period
+    begin
+      WriteLn('[ANTIBAN] Taking micro-break');
+      Wait(Random(2000, 5000));
+    end;
+    
+    4: // Right click examine
+    begin
+      WriteLn('[ANTIBAN] Examining surroundings');
+      Mouse.Move(Mainscreen.Bounds.Random());
+      if Random(2) = 0 then
+        Mouse.Click(MOUSE_RIGHT);
+      Wait(Random(500, 1500));
+    end;
+  end;
+end;
+
+// ============================================================================
+// BREAK HANDLER
+// ============================================================================
+var
+  NextBreakTime: Int64;
+  IsOnBreak: Boolean = False;
+
+procedure InitBreakHandler();
+var
+  MinutesUntilBreak: Integer;
+begin
+  MinutesUntilBreak := Random(BREAK_INTERVAL_MIN, BREAK_INTERVAL_MAX);
+  NextBreakTime := GetTickCount64() + (MinutesUntilBreak * 60000);
+  WriteLn('Next break scheduled in ', MinutesUntilBreak, ' minutes');
+end;
+
+procedure CheckBreak();
+var
+  BreakDuration: Integer;
+begin
+  if not TakeBreaks then Exit;
+  if IsOnBreak then Exit;
+  
+  if GetTickCount64() >= NextBreakTime then
+  begin
+    BreakDuration := Random(BREAK_DURATION_MIN, BREAK_DURATION_MAX);
+    WriteLn('===== TAKING BREAK FOR ', BreakDuration, ' MINUTES =====');
+    IsOnBreak := True;
+    
+    // Move to safe spot or just idle
+    Wait(BreakDuration * 60000);
+    
+    IsOnBreak := False;
+    WriteLn('===== BREAK FINISHED, RESUMING SCRIPT =====');
+    InitBreakHandler(); // Schedule next break
+  end;
+end;
+
+// ============================================================================
+// STATISTICS & PROGRESS TRACKING
+// ============================================================================
+procedure InitStats();
+begin
+  Stats.StartTime := GetTickCount64();
+  Stats.TotalKills := 0;
+  Stats.DeathCount := 0;
+  Stats.FoodEaten := 0;
+  Stats.LastXPTime := GetTickCount64();
+  Stats.CurrentStyle := 0;
+  
+  WriteLn('========================================');
+  WriteLn('Statistics initialized');
+  WriteLn('========================================');
+end;
+
+procedure PrintStats();
+var
+  RunTime, KillsPerHour: Double;
+begin
+  RunTime := (GetTickCount64() - Stats.StartTime) / 3600000;  // Hours
+  
+  if RunTime > 0 then
+    KillsPerHour := Stats.TotalKills / RunTime
+  else
+    KillsPerHour := 0;
+  
+  WriteLn('========================================');
+  WriteLn('         SCRIPT STATISTICS');
+  WriteLn('========================================');
+  WriteLn('Runtime: ', Round(RunTime * 60), ' minutes');
+  WriteLn('Total Kills: ', Stats.TotalKills);
+  WriteLn('Kills/Hour: ', Round(KillsPerHour));
+  WriteLn('Deaths: ', Stats.DeathCount);
+  WriteLn('Food Eaten: ', Stats.FoodEaten);
+  WriteLn('========================================');
+end;
+
+procedure CheckStuck();
+var
+  TimeSinceXP: Int64;
+begin
+  TimeSinceXP := GetTickCount64() - Stats.LastXPTime;
+  
+  if TimeSinceXP > MAX_NO_XP_TIME then
+  begin
+    WriteLn('WARNING: No XP gained in 5 minutes! Possible stuck state.');
+    WriteLn('Attempting to reposition...');
+    
+    // Try to move to a random nearby location
+    Map.Walker.WebWalk(Map.Position.Random(-10, 10), 5);
+    Wait(Random(2000, 4000));
+    
+    Stats.LastXPTime := GetTickCount64(); // Reset timer
+  end;
+end;
+
+// ============================================================================
+// ENHANCED ATTACK FUNCTION WITH ERROR HANDLING
+// ============================================================================
+function AttackSeagull(var NPC: TRSNPCV2; NPCArr: TRSNPCV2Array): Boolean;
+var
+  Attempts: Integer;
+begin
+  Result := False;
+  Attempts := 0;
+  
+  while Attempts < 3 do
+  begin
+    // Check health before attacking
+    CheckAndEat();
+    
+    // Check if NPC is still valid
+    if not NPC.IsVisible() then
+    begin
+      WriteLn('NPC not visible, re-scanning...');
+      NPCArr := NPCs.GetAll('Seagull');
+      if Length(NPCArr) = 0 then
+      begin
+        WriteLn('ERROR: No seagulls found!');
+        Wait(Random(3000, 5000));
+        Inc(Attempts);
+        Continue;
+      end;
+      NPC := NPCArr.FindNearest(Map.Position);
+    end;
+    
+    // Randomize between left-click and right-click attack
+    if UseAntiban and (Random(10) > 7) then
+    begin
+      WriteLn('Using right-click attack (antiban)');
+      if NPC.SelectOption(['Attack']) then
+        Result := True;
+    end
+    else
+    begin
+      WriteLn('Walking to seagull and attacking...');
+      if NPC.WalkSelectOption(['Attack'], Random(3, 7)) then
+        Result := True;
+    end;
+    
+    if Result then
+    begin
+      // Random delay before combat check
+      Wait(Random(800, 1500));
+      
+      // Wait for combat to end
+      if WaitUntil(not Mainscreen.IsInCombat(), COMBAT_CHECK_INTERVAL, COMBAT_TIMEOUT) then
+      begin
+        Inc(Stats.TotalKills);
+        Stats.LastXPTime := GetTickCount64(); // Update XP time
+        WriteLn('Kill #', Stats.TotalKills, ' completed');
+        
+        // Random post-kill delay
+        Wait(Random(500, 2000));
+        Exit(True);
+      end;
+    end;
+    
+    Inc(Attempts);
+    Wait(Random(1000, 2000));
+  end;
+  
+  WriteLn('Failed to attack after 3 attempts');
+end;
+
+// ============================================================================
+// TRAINING FUNCTION FOR SINGLE COMBAT STYLE
+// ============================================================================
+procedure TrainCombatStyle(StyleIndex: Integer; TrainDuration: Integer);
+var
+  NPC: TRSNPCV2;
+  NPCArr: TRSNPCV2Array;
+  StyleTimer: TStopwatch;
+  ActualDuration: Integer;
+  AttackCount: Integer;
+  AntibanTimer: TStopwatch;
+begin
+  WriteLn('========================================');
+  WriteLn('Starting training session for style index: ', StyleIndex);
+  WriteLn('========================================');
+  
+  // Apply randomization if enabled
+  ActualDuration := TrainDuration;
+  if RandomizeDuration then
+  begin
+    ActualDuration := TrainDuration + Random(-5, 5);
+    if ActualDuration < 1 then ActualDuration := 1;
+    WriteLn('Duration randomized to: ', ActualDuration, ' minutes');
+  end;
+  
+  // Set combat style
+  case StyleIndex of
+    0: 
+    begin
+      Combat.SetCombatStyle(COMBAT_STYLE_PUNCH);
+      WriteLn('Combat style set to: ATTACK (Punch)');
+    end;
+    1: 
+    begin
+      Combat.SetCombatStyle(COMBAT_STYLE_KICK);
+      WriteLn('Combat style set to: STRENGTH (Kick)');
+    end;
+    2: 
+    begin
+      Combat.SetCombatStyle(COMBAT_STYLE_BLOCK);
+      WriteLn('Combat style set to: DEFENCE (Block)');
+    end;
+  end;
+  
+  Stats.CurrentStyle := StyleIndex;
+  
+  // Initial NPC scan
+  NPCArr := NPCs.GetAll('Seagull');
+  if Length(NPCArr) = 0 then
+  begin
+    WriteLn('FATAL ERROR: No seagulls found in area!');
+    Exit;
+  end;
+  
+  NPC := NPCArr.FindNearest(Map.Position);
+  
+  StyleTimer.Start();
+  AntibanTimer.Start();
+  AttackCount := 0;
+  
+  // Main training loop
+  while StyleTimer.ElapsedTime < ActualDuration * 60000 do
+  begin
+    // Safety checks
+    if IsDead() then
+    begin
+      WriteLn('Player died! Stopping script.');
+      Exit;
+    end;
+    
+    CheckBreak();
+    CheckStuck();
+    
+    // Progress update
+    WriteLn('Progress: ', Round(StyleTimer.ElapsedTime / 60000), '/', ActualDuration, ' minutes');
+    
+    // Perform antiban actions periodically
+    if UseAntiban and (AntibanTimer.ElapsedTime > ANTIBAN_CHECK_INTERVAL) then
+    begin
+      PerformAntiban();
+      AntibanTimer.Reset();
+    end;
+    
+    // Re-scan for NPCs periodically
+    Inc(AttackCount);
+    if AttackCount mod NPC_RESCAN_INTERVAL = 0 then
+    begin
+      WriteLn('Re-scanning for seagulls...');
+      NPCArr := NPCs.GetAll('Seagull');
+      if Length(NPCArr) > 0 then
+        NPC := NPCArr.FindNearest(Map.Position);
+    end;
+    
+    // Attack seagull
+    if not AttackSeagull(NPC, NPCArr) then
+    begin
+      WriteLn('Attack failed, waiting before retry...');
+      Wait(Random(2000, 4000));
+    end;
+    
+    // Print statistics every 10 kills
+    if Stats.TotalKills mod 10 = 0 then
+      PrintStats();
+  end;
+  
+  WriteLn('Training session completed for style index: ', StyleIndex);
+  PrintStats();
+end;
+
+// ============================================================================
+// MAIN SCRIPT EXECUTION
+// ============================================================================
+var
+  Config: TSeagullConfig;
+  i: Integer;
+  ScriptTimer: TStopwatch;
+
+begin
+  // Display configuration GUI and wait for user input
+  Config.Run();
+  
+  WriteLn('========================================');
+  WriteLn('  SEAGULL SLAYER ENHANCED v2.0');
+  WriteLn('========================================');
+  WriteLn('Configuration:');
+  WriteLn('  Duration per style: ', Duration, ' minutes');
+  WriteLn('  All combat styles: ', AllCombatStyles);
+  WriteLn('  Use food: ', UseFood);
+  if UseFood then
+    WriteLn('  Food type: ', FoodName);
+  WriteLn('  Antiban enabled: ', UseAntiban);
+  WriteLn('  Randomize duration: ', RandomizeDuration);
+  WriteLn('  Take breaks: ', TakeBreaks);
+  WriteLn('========================================');
+  
+  // Initialize statistics
+  InitStats();
+  
+  // Initialize break handler
+  if TakeBreaks then
+    InitBreakHandler();
+  
+  // Setup map and NPCs
+  WriteLn('Setting up map chunks...');
+  Map.SetupChunks([[[46, 51, 48, 49], [0]]]);
+  
+  WriteLn('Initializing NPC detection...');
+  NPCs.Setup(Map.NPCs, @Map.Walker);
+  
+  // Configure attack options
+  Options.SetNPCAttackOption(ERSAttackOption.ALWAYS_LEFT_CLICK);
+  
+  // Enable real input for more human-like behavior
+  RSClient.RemoteInput.EnableRealInput();
+  
+  WriteLn('Setup complete! Starting training...');
+  WriteLn('========================================');
+  
+  // Start main script timer
+  ScriptTimer.Start();
+  
+  // Main training logic
+  if AllCombatStyles then
+  begin
+    WriteLn('Training all combat styles sequentially...');
+    
+    for i := 0 to 2 do
+    begin
+      // Check maximum runtime
+      if ScriptTimer.ElapsedTime > MAX_RUNTIME_HOURS * 3600000 then
+      begin
+        WriteLn('========================================');
+        WriteLn('Maximum runtime of ', MAX_RUNTIME_HOURS, ' hours reached!');
+        WriteLn('Stopping script for safety.');
+        WriteLn('========================================');
+        Break;
+      end;
+      
+      TrainCombatStyle(i, Duration);
+      
+      // Break between styles
+      if i < 2 then
+      begin
+        WriteLn('Taking 30 second break before next style...');
+        Wait(Random(25000, 35000));
+      end;
+    end;
+  end
+  else
+  begin
+    WriteLn('Training current combat style only...');
+    TrainCombatStyle(0, Duration);  // Train current style
+  end;
+  
+  // Final statistics
+  WriteLn('========================================');
+  WriteLn('  SCRIPT COMPLETED SUCCESSFULLY!');
+  WriteLn('========================================');
+  PrintStats();
+  WriteLn('Thank you for using Seagull Slayer Enhanced!');
+  WriteLn('========================================');
+end.
