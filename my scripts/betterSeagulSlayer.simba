@@ -45,6 +45,8 @@ type
     CurrentStyle: Integer;
   end;
 
+var
+  PersonalStats: TScriptStats;
 
 // ============================================================================
 // CONFIGURATION GUI TYPE
@@ -280,8 +282,8 @@ begin
   begin
     Inventory.ClickSlot(FoodSlot);
     Wait(Random(800, 1500));  // Random delay after eating
-    //Unknown declaration "FoodEaten" Inc(Stats.FoodEaten);
-    // Unknown declaration "FoodEaten"WriteLn('Food eaten. Total food consumed: ', Stats.FoodEaten);
+    //Unknown declaration "FoodEaten" Inc(PersonalStats.FoodEaten);
+    // Unknown declaration "FoodEaten"WriteLn('Food eaten. Total food consumed: ', PersonalStats.FoodEaten);
     Result := True;
   end
   else
@@ -318,7 +320,7 @@ begin
   if Result then
   begin
     WriteLn('DEATH DETECTED! Incrementing death counter.');
-    //Inc(Stats.DeathCount);
+    //Inc(PersonalStats.DeathCount);
   end;
 end;
 
@@ -418,12 +420,12 @@ end;
 // ============================================================================
 procedure InitStats();
 begin
-  Stats.StartTime := GetTickCount();
-  Stats.TotalKills := 0;
-  Stats.DeathCount := 0;
-  Stats.FoodEaten := 0;
-  Stats.LastXPTime := GetTickCount();
-  Stats.CurrentStyle := 0;
+  PersonalStats.StartTime := GetTickCount();
+  PersonalStats.TotalKills := 0;
+  PersonalStats.DeathCount := 0;
+  PersonalStats.FoodEaten := 0;
+  PersonalStats.LastXPTime := GetTickCount();
+  PersonalStats.CurrentStyle := 0;
   
   WriteLn('========================================');
   WriteLn('Statistics initialized');
@@ -434,10 +436,10 @@ procedure PrintStats();
 var
   RunTime, KillsPerHour: Double;
 begin
-  RunTime := (GetTickCount() - Stats.StartTime) / 3600000;  // Hours
+  RunTime := (GetTickCount() - PersonalStats.StartTime) / 3600000;  // Hours
   
   if RunTime > 0 then
-    KillsPerHour := Stats.TotalKills / RunTime
+    KillsPerHour := PersonalStats.TotalKills / RunTime
   else
     KillsPerHour := 0;
   
@@ -445,10 +447,10 @@ begin
   WriteLn('         SCRIPT STATISTICS');
   WriteLn('========================================');
   WriteLn('Runtime: ', Round(RunTime * 60), ' minutes');
-  WriteLn('Total Kills: ', Stats.TotalKills);
+  WriteLn('Total Kills: ', PersonalStats.TotalKills);
   WriteLn('Kills/Hour: ', Round(KillsPerHour));
-  WriteLn('Deaths: ', Stats.DeathCount);
-  WriteLn('Food Eaten: ', Stats.FoodEaten);
+  WriteLn('Deaths: ', PersonalStats.DeathCount);
+  WriteLn('Food Eaten: ', PersonalStats.FoodEaten);
   WriteLn('========================================');
 end;
 
@@ -456,7 +458,7 @@ procedure CheckStuck();
 var
   TimeSinceXP: Int64;
 begin
-  TimeSinceXP := GetTickCount() - Stats.LastXPTime;
+  TimeSinceXP := GetTickCount() - PersonalStats.LastXPTime;
   
   if TimeSinceXP > MAX_NO_XP_TIME then
   begin
@@ -467,7 +469,7 @@ begin
     Map.Walker.WebWalk(Map.Position.Random(-10, 10), 5);
     Wait(Random(2000, 4000));
     
-    Stats.LastXPTime := GetTickCount(); // Reset timer
+    PersonalStats.LastXPTime := GetTickCount(); // Reset timer
   end;
 end;
 
@@ -523,9 +525,9 @@ begin
       // Wait for combat to end
       if WaitUntil(not Mainscreen.IsInCombat(), COMBAT_CHECK_INTERVAL, COMBAT_TIMEOUT) then
       begin
-        Inc(Stats.TotalKills);
-        Stats.LastXPTime := GetTickCount(); // Update XP time
-        WriteLn('Kill #', Stats.TotalKills, ' completed');
+        Inc(PersonalStats.TotalKills);
+        PersonalStats.LastXPTime := GetTickCount(); // Update XP time
+        WriteLn('Kill #', PersonalStats.TotalKills, ' completed');
         
         // Random post-kill delay
         Wait(Random(500, 2000));
@@ -584,7 +586,7 @@ begin
     end;
   end;
   
-  Stats.CurrentStyle := StyleIndex;
+  PersonalStats.CurrentStyle := StyleIndex;
   
   // Initial NPC scan
   NPCArr := NPCs.GetAll('Seagull');
@@ -641,7 +643,7 @@ begin
     end;
     
     // Print statistics every 10 kills
-    if Stats.TotalKills mod 10 = 0 then
+    if PersonalStats.TotalKills mod 10 = 0 then
       PrintStats();
   end;
   

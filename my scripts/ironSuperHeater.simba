@@ -48,7 +48,9 @@ type
   end;
 
 
-
+var
+  Stats: TScriptStats;
+v
 
 procedure TSuperHeaterConfig.Run(); override;
 var
