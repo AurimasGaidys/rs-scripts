@@ -26,7 +26,7 @@ begin
   Self.Hold(Button);
   Wait(SRL.TruncatedGauss(50, 110));
   Self.Release(Button);
-  //Wait(SRL.TruncatedGauss(10, 25));
+  Wait(SRL.TruncatedGauss(10, 25));
 
   {$IFDEF SRL_DEBUG_MOUSE}
   GetClientDimensions(W,H);
@@ -215,9 +215,9 @@ begin
 
     if not RSClient.IsLoggedIn then Login.LoginPlayer;
 
-    RSAlchHandler.CastAlchemy(True, True);
+    //RSAlchHandler.CastAlchemy(True, True);
 
-    Magic.ClickSpell(ERSSpell.CAMELOT_TELEPORT);
+    Magic.ClickSpell(ERSSpell.FALADOR_TELEPORT);
     Self.TotalActions += 1;
     Self.TotalProfit := RSAlchHandler.TotalProfit - Self.TotalActions*LawRunePrice;
     WaitUntil(XPBar.EarnedXP(True), 50, 2000);

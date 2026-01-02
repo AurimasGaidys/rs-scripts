@@ -12,12 +12,14 @@ const
   BAR_TYPE: TStringArray =
     ['Bronze', 'Iron', 'Silver', 'Steel', 'Gold', 'Mithril', 'Adamantite', 'Runite'];
 
+var castCount : Int32= 0;
+
 //=============DEFAULT SETTINGS==============
 var
   CurrentTask: string                   = 'Iron';        // Select bar
   USE_COALBAG: Boolean                  = False;         // Steel,Mithril,Adamantite,Runite
   USE_GUI: Boolean                      = True;          // Should use Wasp GUI
-  MOUSEOVERRIDE: Int32                  = 15;            // Set movement
+  MOUSEOVERRIDE: Int32                  = 13;            // Set movement
   CastAttemptReset: Integer             = 3;             // How many cast fails before bank
   CastRune: String                      = 'Nature rune'; // If Bryophyta then change to 'Fire rune'
 
@@ -156,8 +158,10 @@ begin
     upText := MainScreen.GetUpText();
 
     if not option.Contains('>') and upText.Contains('>') then
+    begin
+    WriteLn('failed1');
       Exit(ChooseOption.Select('Cancel'));
-
+    end;
 
     if (option = '') or upText.Contains(option) then
     begin
@@ -176,7 +180,12 @@ begin
   if ItemCount <= 0 then Exit;
 
   // Exit early if unable to cast the spell or open inventory
-  if not (Magic.CastSpell(Self.Spell) and WaitUntil(Inventory.IsOpen, 300, 5000)) then Exit;
+  if not (Magic.ClickSpell(Self.Spell) and WaitUntil(Inventory.IsOpen, 300, 5000)) then Exit;
+
+  Inc(castCount);
+  WriteLn('The ', castCount);
+
+  Wait(200, 500);
 
   // Exit early if unable to click primary ore
   if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then Exit;
@@ -199,46 +208,36 @@ var
   itemCount: Int32 := Inventory.CountItem(Bar.Item);
   Exclude_Items: TRSItemArray := [Self.Runes.Item];
 begin
-  // Conditionally add Coal Bag if it's being used
-  if USE_COALBAG then
-  begin
-    SetLength(Exclude_Items, Length(Exclude_Items) + 1);
-    Exclude_Items[High(Exclude_Items)] := Self.CoalBag.Item;
-  end;
-
+  WriteLn('bank shit');
   // Deposit Bars
   if Result := Bank.DepositItem(Bar, True) then
   begin
+    WriteLn('bank shitč');
     if WaitUntil(Inventory.CountItem(Bar.Item) = 0, 500, 2000) then
     begin
+      WriteLn('Well something again');
       Self.TotalActions += itemCount;
     end;
   end;
 
   // Deposit random items excluding the ones specified
   if Inventory.ContainsRandomItems(Exclude_Items) then
+  begin
+    WriteLn('Random shit');
     Bank.DepositRandomItems(Exclude_Items);
+  end;
 end;
 
 procedure TSuperHeater.WithdrawMaterial();
 begin
+
   // Deposit if there is anything that shouldn't be inside inventory
+  //if Inventory.ContainsRandomItems(Exclude_Items) then
   Self.Deposit;
 
   if not Inventory.ContainsItem(Self.Runes.Item) then
     Self.Withdraw(Self.Runes);
 
-  if USE_COALBAG then
-  begin
-  if not Inventory.ContainsItem(Self.CoalBag.Item) then
-    Self.Withdraw(Self.CoalBag);
-
-  if Inventory.ContainsItem(Self.CoalBag.Item) then
-  begin
-    Waituntil(Inventory.ClickItem(Self.CoalBag.Item, 'Empty'), 500, 2000);
-    Waituntil(Inventory.ClickItem(Self.CoalBag.Item, 'Fill'), 500, 2000);
-  end
-  end
   if SecondaryOre.Item <> '' then
   begin
     Self.Withdraw(Self.PrimaryOre);
@@ -353,6 +352,7 @@ end;
 
 function TSuperHeater.Terminate(): Boolean; override;
 begin
+WriteLn('Note ze bars');
   Self.Bar.Noted := True;
   if inherited then
     for 0 to 5 do
@@ -364,6 +364,7 @@ end;
 procedure TSuperHeater.Run(MaxActions: Int32; MaxTime: Int64);
 begin
   Self.Init(MaxActions, MaxTime);
+  WriteLn('HWG');
   repeat
     State := Self.GetState();
     Self.SetAction(ToStr(State));
