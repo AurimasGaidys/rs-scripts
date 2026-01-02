@@ -1,0 +1,643 @@
+{$DEFINE SCRIPT_ID := 'generic-npc-attacker-001'}
+{$DEFINE SCRIPT_REVISION := '1'}
+
+{$I WaspLib/osr.simba}
+
+// ============================================================================
+// GENERIC NPC ATTACKER - Location Independent
+// ============================================================================
+// This script attacks the nearest NPC of a specified name without requiring
+// specific location setup. Works anywhere in the game world.
+// ============================================================================
+
+// ============================================================================
+// CONSTANTS - Centralized configuration values
+// ============================================================================
+const
+  COMBAT_TIMEOUT = 30000;           // Maximum time to wait in combat (30 seconds)
+  COMBAT_CHECK_INTERVAL = 50;       // How often to check combat status (50ms)
+  MIN_HEALTH_PERCENT = 50;          // Eat food when health drops below this percentage
+  MAX_RUNTIME_HOURS = 6;            // Maximum script runtime for safety
+  BREAK_INTERVAL_MIN = 60;          // Minimum minutes before taking a break
+  BREAK_INTERVAL_MAX = 120;         // Maximum minutes before taking a break
+  BREAK_DURATION_MIN = 5;           // Minimum break duration in minutes
+  BREAK_DURATION_MAX = 10;          // Maximum break duration in minutes
+  ANTIBAN_CHECK_INTERVAL = 45000;   // Check for antiban actions every 45 seconds
+  NPC_SEARCH_RADIUS = 50;           // Search radius for NPCs
+  MAX_NO_XP_TIME = 300000;          // If no XP in 5 minutes, we're stuck
+  NPC_RESCAN_INTERVAL = 5;          // Re-scan for NPCs every X attacks
+
+// ============================================================================
+// GLOBAL CONFIGURATION VARIABLES
+// ============================================================================
+var
+  TargetNPCName: String = 'Chicken';         // Name of NPC to attack
+  UseFood: Boolean = True;                    // Enable food eating
+  FoodName: String = 'Lobster';              // Name of food to eat
+  UseAntiban: Boolean = True;                // Enable antiban features
+  TakeBreaks: Boolean = True;                // Enable break handler
+  TrainDuration: Integer = 60;               // Duration in minutes to train
+  UseLoot: Boolean = False;                  // Enable looting (future feature)
+  
+// ============================================================================
+// STATISTICS TRACKING
+// ============================================================================
+type
+  TScriptStats = record
+    StartTime: Int64;
+    TotalKills: Integer;
+    DeathCount: Integer;
+    FoodEaten: Integer;
+    LastXPTime: Int64;
+  end;
+
+var
+  PersonalStats: TScriptStats;
+
+// ============================================================================
+// CONFIGURATION GUI TYPE
+// ============================================================================
+type
+  TGenericNPCConfig = record(TScriptForm)
+    NPCNameBox: TLabeledEdit;
+    DurationBox: TLabeledEdit;
+    UseFoodCheck: TLabeledCheckbox;
+    FoodNameBox: TLabeledEdit;
+    UseAntibanCheck: TLabeledCheckbox;
+    TakeBreaksCheck: TLabeledCheckbox;
+  end;
+
+// ============================================================================
+// StartScript - Called when user clicks the Start button
+// Validates and retrieves values from GUI form
+// ============================================================================
+procedure TGenericNPCConfig.StartScript(sender: TObject); override;
+var
+  InputDuration: Integer;
+begin
+  // Get NPC name
+  TargetNPCName := Self.NPCNameBox.GetText();
+  if TargetNPCName = '' then
+  begin
+    WriteLn('ERROR: Please specify an NPC name');
+    Exit;
+  end;
+
+  // Validate duration input
+  try
+    InputDuration := StrToInt(Self.DurationBox.GetText());
+    if (InputDuration <= 0) or (InputDuration > 360) then
+    begin
+      WriteLn('ERROR: Duration must be between 1 and 360 minutes');
+      Exit;
+    end;
+    TrainDuration := InputDuration;
+  except
+    WriteLn('ERROR: Invalid duration value. Please enter a number.');
+    Exit;
+  end;
+
+  // Get all configuration values from GUI
+  UseFood := Self.UseFoodCheck.IsChecked();
+  FoodName := Self.FoodNameBox.GetText();
+  UseAntiban := Self.UseAntibanCheck.IsChecked();
+  TakeBreaks := Self.TakeBreaksCheck.IsChecked();
+
+  // Validate food name if food eating is enabled
+  if UseFood and (FoodName = '') then
+  begin
+    WriteLn('ERROR: Please specify a food name');
+    Exit;
+  end;
+
+  inherited;
+end;
+
+// ============================================================================
+// Run - Builds and displays the configuration GUI
+// ============================================================================
+procedure TGenericNPCConfig.Run(); override;
+var
+  Tab: TTabSheet;
+begin
+  Self.Setup('Generic NPC Attacker Config');
+  Self.Start.SetOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  Tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(Tab);
+
+  // NPC Name Input
+  with Self.NPCNameBox do
+  begin
+    Create(Tab);
+    SetCaption('NPC name to attack:');
+    SetLeft(30);
+    SetTop(150);
+    SetWidth(TControl.AdjustToDPI(200));
+    SetText(TargetNPCName);
+  end;
+
+  // Duration Input
+  with Self.DurationBox do
+  begin
+    Create(Tab);
+    SetCaption('Training duration (minutes):');
+    SetLeft(30);
+    SetTop(180);
+    SetWidth(TControl.AdjustToDPI(200));
+    SetText(ToStr(TrainDuration));
+  end;
+
+  // Food Usage Checkbox
+  with Self.UseFoodCheck do
+  begin
+    Create(Tab);
+    SetCaption('Use food for healing?');
+    SetLeft(30);
+    SetTop(210);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(UseFood);
+  end;
+
+  // Food Name Input
+  with Self.FoodNameBox do
+  begin
+    Create(Tab);
+    SetCaption('Food name:');
+    SetLeft(30);
+    SetTop(240);
+    SetWidth(TControl.AdjustToDPI(200));
+    SetText(FoodName);
+  end;
+
+  // Antiban Checkbox
+  with Self.UseAntibanCheck do
+  begin
+    Create(Tab);
+    SetCaption('Enable antiban features?');
+    SetLeft(30);
+    SetTop(270);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(UseAntiban);
+  end;
+
+  // Break Handler Checkbox
+  with Self.TakeBreaksCheck do
+  begin
+    Create(Tab);
+    SetCaption('Take random breaks?');
+    SetLeft(30);
+    SetTop(300);
+    SetWidth(TControl.AdjustToDPI(310));
+    SetChecked(TakeBreaks);
+  end;
+
+  inherited;
+end;
+
+// ============================================================================
+// ENHANCED COMBAT DETECTION
+// ============================================================================
+function TRSMainscreen.IsInCombat(): Boolean;
+var
+  Timer: TCountdown;
+  Hits: Integer;
+begin
+  Timer.Init(3000);
+  
+  while not Timer.IsFinished do
+  begin
+    // Check for hitsplats
+    Hits := Length(Mainscreen.FindHitsplats(Mainscreen.GetPlayerBox.Expand(15)));
+    if Hits > 0 then Exit(True);
+    
+    // Check for XP gain
+    if XPBar.EarnedXP then Exit(True);
+    
+    // Additional check: if player is animating
+    if Minimap.IsPlayerMoving() then Exit(True);
+  end;
+  
+  Result := False;
+end;
+
+// ============================================================================
+// LOCATION-INDEPENDENT NPC FINDING
+// ============================================================================
+function FindNearestNPC(NPCName: String): TRSNPC;
+var
+  NPCs: TRSNPCArray;
+  NPC: TRSNPC;
+  BestNPC: TRSNPC;
+  MinDist, Dist: Double;
+  PlayerPos: TPoint;
+begin
+  Result := [];
+  
+  // Get player position on minimap
+  PlayerPos := Minimap.Center();
+  
+  // Find all NPCs with matching name
+  NPCs := Minimap.FindNPCs(NPCName);
+  
+  if Length(NPCs) = 0 then
+  begin
+    WriteLn('No NPCs found with name: ', NPCName);
+    Exit;
+  end;
+  
+  WriteLn('Found ', Length(NPCs), ' ', NPCName, '(s)');
+  
+  // Find nearest NPC
+  MinDist := $FFFFFF;
+  for NPC in NPCs do
+  begin
+    Dist := NPC.Dot.DistanceTo(PlayerPos);
+    if Dist < MinDist then
+    begin
+      MinDist := Dist;
+      BestNPC := NPC;
+    end;
+  end;
+  
+  WriteLn('Nearest ', NPCName, ' found at distance: ', Round(MinDist));
+  Result := BestNPC;
+end;
+
+// ============================================================================
+// HEALTH MONITORING & FOOD EATING
+// ============================================================================
+function GetHealthPercent(): Integer;
+var
+  HPRatio: Double;
+begin
+  HPRatio := Minimap.GetHPPercent();
+  Result := Round(HPRatio);
+  WriteLn('Current health: ', Result, '%');
+end;
+
+function EatFood(): Boolean;
+var
+  FoodSlot: Integer;
+begin
+  Result := False;
+  
+  if not UseFood then Exit;
+  
+  WriteLn('Attempting to eat ', FoodName, '...');
+  
+  // Find food in inventory
+  if Inventory.FindItem(FoodName, FoodSlot) then
+  begin
+    Inventory.ClickSlot(FoodSlot);
+    Wait(Random(800, 1500));
+    Inc(PersonalStats.FoodEaten);
+    WriteLn('Food eaten. Total food consumed: ', PersonalStats.FoodEaten);
+    Result := True;
+  end
+  else
+  begin
+    WriteLn('WARNING: Out of food! Consider stopping script.');
+  end;
+end;
+
+function CheckAndEat(): Boolean;
+var
+  CurrentHP: Integer;
+begin
+  Result := False;
+  
+  if not UseFood then Exit;
+  
+  CurrentHP := GetHealthPercent();
+  
+  if CurrentHP < MIN_HEALTH_PERCENT then
+  begin
+    WriteLn('Health below ', MIN_HEALTH_PERCENT, '%, eating food...');
+    Result := EatFood();
+  end;
+end;
+
+// ============================================================================
+// DEATH DETECTION
+// ============================================================================
+function IsDead(): Boolean;
+begin
+  Result := Chat.FindMessage('Oh dear, you are dead!', [CHAT_COLOR_BLUE]);
+  
+  if Result then
+  begin
+    WriteLn('DEATH DETECTED! Incrementing death counter.');
+    Inc(PersonalStats.DeathCount);
+  end;
+end;
+
+// ============================================================================
+// ANTIBAN FEATURES
+// ============================================================================
+procedure PerformAntiban();
+var
+  Action: Integer;
+begin
+  if not UseAntiban then Exit;
+  
+  Action := Random(0, 4);
+  
+  case Action of
+    0: // Random camera movement
+    begin
+      WriteLn('[ANTIBAN] Random camera movement');
+      Minimap.SetCompassAngle(Random(0, 360), Random(5, 15));
+      Wait(Random(500, 1500));
+    end;
+    
+    1: // Check skills tab
+    begin
+      WriteLn('[ANTIBAN] Checking skills tab');
+      if GameTabs.Open(ERSGameTab.STATS) then
+      begin
+        Wait(Random(1000, 3000));
+        GameTabs.Open(ERSGameTab.COMBAT);
+      end;
+    end;
+    
+    2: // Brief idle period
+    begin
+      WriteLn('[ANTIBAN] Taking micro-break');
+      Wait(Random(2000, 5000));
+    end;
+    
+    3: // Right click examine
+    begin
+      WriteLn('[ANTIBAN] Examining surroundings');
+      if Random(2) = 0 then
+        Mouse.Click(MOUSE_RIGHT);
+      Wait(Random(500, 1500));
+    end;
+  end;
+end;
+
+// ============================================================================
+// BREAK HANDLER
+// ============================================================================
+var
+  NextBreakTime: Int64;
+  IsOnBreak: Boolean = False;
+
+procedure InitBreakHandler();
+var
+  MinutesUntilBreak: Integer;
+begin
+  MinutesUntilBreak := Random(BREAK_INTERVAL_MIN, BREAK_INTERVAL_MAX);
+  NextBreakTime := GetTickCount() + (MinutesUntilBreak * 60000);
+  WriteLn('Next break scheduled in ', MinutesUntilBreak, ' minutes');
+end;
+
+procedure CheckBreak();
+var
+  BreakDuration: Integer;
+begin
+  if not TakeBreaks then Exit;
+  if IsOnBreak then Exit;
+  
+  if GetTickCount() >= NextBreakTime then
+  begin
+    BreakDuration := Random(BREAK_DURATION_MIN, BREAK_DURATION_MAX);
+    WriteLn('===== TAKING BREAK FOR ', BreakDuration, ' MINUTES =====');
+    IsOnBreak := True;
+    
+    Wait(BreakDuration * 60000);
+    
+    IsOnBreak := False;
+    WriteLn('===== BREAK FINISHED, RESUMING SCRIPT =====');
+    InitBreakHandler();
+  end;
+end;
+
+// ============================================================================
+// STATISTICS & PROGRESS TRACKING
+// ============================================================================
+procedure InitStats();
+begin
+  PersonalStats.StartTime := GetTickCount();
+  PersonalStats.TotalKills := 0;
+  PersonalStats.DeathCount := 0;
+  PersonalStats.FoodEaten := 0;
+  PersonalStats.LastXPTime := GetTickCount();
+  
+  WriteLn('========================================');
+  WriteLn('Statistics initialized');
+  WriteLn('========================================');
+end;
+
+procedure PrintStats();
+var
+  RunTime, KillsPerHour: Double;
+begin
+  RunTime := (GetTickCount() - PersonalStats.StartTime) / 3600000;
+  
+  if RunTime > 0 then
+    KillsPerHour := PersonalStats.TotalKills / RunTime
+  else
+    KillsPerHour := 0;
+  
+  WriteLn('========================================');
+  WriteLn('         SCRIPT STATISTICS');
+  WriteLn('========================================');
+  WriteLn('Runtime: ', Round(RunTime * 60), ' minutes');
+  WriteLn('Total Kills: ', PersonalStats.TotalKills);
+  WriteLn('Kills/Hour: ', Round(KillsPerHour));
+  WriteLn('Deaths: ', PersonalStats.DeathCount);
+  WriteLn('Food Eaten: ', PersonalStats.FoodEaten);
+  WriteLn('========================================');
+end;
+
+procedure CheckStuck();
+var
+  TimeSinceXP: Int64;
+begin
+  TimeSinceXP := GetTickCount() - PersonalStats.LastXPTime;
+  
+  if TimeSinceXP > MAX_NO_XP_TIME then
+  begin
+    WriteLn('WARNING: No XP gained in 5 minutes! Possible stuck state.');
+    WriteLn('Attempting to move slightly...');
+    
+    // Random mouse movement to unstuck
+    Mouse.Move(Mainscreen.Bounds.Random());
+    Wait(Random(1000, 2000));
+    
+    PersonalStats.LastXPTime := GetTickCount();
+  end;
+end;
+
+// ============================================================================
+// ENHANCED ATTACK FUNCTION - LOCATION INDEPENDENT
+// ============================================================================
+function AttackNearestNPC(): Boolean;
+var
+  NPC: TRSNPC;
+  Attempts: Integer;
+begin
+  Result := False;
+  Attempts := 0;
+  
+  while Attempts < 3 do
+  begin
+    // Check health before attacking
+    CheckAndEat();
+    
+    // Find nearest NPC
+    NPC := FindNearestNPC(TargetNPCName);
+    
+    if Length(NPC.Dots) = 0 then
+    begin
+      WriteLn('No ', TargetNPCName, ' found nearby. Waiting...');
+      Wait(Random(3000, 5000));
+      Inc(Attempts);
+      Continue;
+    end;
+    
+    // Click on the NPC to attack
+    WriteLn('Attacking ', TargetNPCName, '...');
+    Mouse.Click(NPC.Dots[0], MOUSE_LEFT);
+    
+    // Wait a moment for combat to start
+    Wait(Random(800, 1500));
+    
+    // Wait for combat to end
+    if WaitUntil(not Mainscreen.IsInCombat(), COMBAT_CHECK_INTERVAL, COMBAT_TIMEOUT) then
+    begin
+      Inc(PersonalStats.TotalKills);
+      PersonalStats.LastXPTime := GetTickCount();
+      WriteLn('Kill #', PersonalStats.TotalKills, ' completed');
+      
+      // Random post-kill delay
+      Wait(Random(500, 2000));
+      Exit(True);
+    end;
+    
+    Inc(Attempts);
+    Wait(Random(1000, 2000));
+  end;
+  
+  WriteLn('Failed to attack after 3 attempts');
+end;
+
+// ============================================================================
+// MAIN TRAINING LOOP - LOCATION INDEPENDENT
+// ============================================================================
+procedure TrainAtCurrentLocation();
+var
+  ScriptTimer: TStopwatch;
+  AntibanTimer: TStopwatch;
+  AttackCount: Integer;
+begin
+  WriteLn('========================================');
+  WriteLn('Starting training session');
+  WriteLn('Target NPC: ', TargetNPCName);
+  WriteLn('Duration: ', TrainDuration, ' minutes');
+  WriteLn('========================================');
+  
+  ScriptTimer.Start();
+  AntibanTimer.Start();
+  AttackCount := 0;
+  
+  // Main training loop
+  while ScriptTimer.ElapsedTime < TrainDuration * 60000 do
+  begin
+    // Safety checks
+    if IsDead() then
+    begin
+      WriteLn('Player died! Stopping script.');
+      Exit;
+    end;
+    
+    CheckBreak();
+    CheckStuck();
+    
+    // Progress update
+    WriteLn('Progress: ', Round(ScriptTimer.ElapsedTime / 60000), '/', TrainDuration, ' minutes');
+    
+    // Perform antiban actions periodically
+    if UseAntiban and (AntibanTimer.ElapsedTime > ANTIBAN_CHECK_INTERVAL) then
+    begin
+      PerformAntiban();
+      AntibanTimer.Reset();
+    end;
+    
+    // Attack nearest NPC
+    if not AttackNearestNPC() then
+    begin
+      WriteLn('Attack failed, waiting before retry...');
+      Wait(Random(2000, 4000));
+    end;
+    
+    Inc(AttackCount);
+    
+    // Print statistics every 10 kills
+    if PersonalStats.TotalKills mod 10 = 0 then
+      PrintStats();
+  end;
+  
+  WriteLn('Training session completed');
+  PrintStats();
+end;
+
+// ============================================================================
+// MAIN SCRIPT EXECUTION
+// ============================================================================
+var
+  Config: TGenericNPCConfig;
+
+begin
+  // Display configuration GUI and wait for user input
+  Config.Run();
+  
+  WriteLn('========================================');
+  WriteLn('  GENERIC NPC ATTACKER v1.0');
+  WriteLn('  Location Independent');
+  WriteLn('========================================');
+  WriteLn('Configuration:');
+  WriteLn('  Target NPC: ', TargetNPCName);
+  WriteLn('  Training duration: ', TrainDuration, ' minutes');
+  WriteLn('  Use food: ', UseFood);
+  if UseFood then
+    WriteLn('  Food type: ', FoodName);
+  WriteLn('  Antiban enabled: ', UseAntiban);
+  WriteLn('  Take breaks: ', TakeBreaks);
+  WriteLn('========================================');
+  
+  // Initialize statistics
+  InitStats();
+  
+  // Initialize break handler
+  if TakeBreaks then
+    InitBreakHandler();
+  
+  // Configure attack options
+  Options.SetNPCAttackOption(ERSAttackOption.ALWAYS_LEFT_CLICK);
+  
+  // Enable real input for more human-like behavior
+  RSClient.RemoteInput.EnableRealInput();
+  
+  WriteLn('Setup complete! Starting training...');
+  WriteLn('This script works at your current location.');
+  WriteLn('Make sure you are near ', TargetNPCName, 's before starting.');
+  WriteLn('========================================');
+  
+  // Wait a moment for user to position themselves
+  Wait(3000);
+  
+  // Start training at current location
+  TrainAtCurrentLocation();
+  
+  // Final statistics
+  WriteLn('========================================');
+  WriteLn('  SCRIPT COMPLETED SUCCESSFULLY!');
+  WriteLn('========================================');
+  PrintStats();
+  WriteLn('Thank you for using Generic NPC Attacker!');
+  WriteLn('========================================');
+end.
