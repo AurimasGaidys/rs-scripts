@@ -45,8 +45,6 @@ type
     CurrentStyle: Integer;
   end;
 
-var
-  Stats: TScriptStats;
 
 // ============================================================================
 // CONFIGURATION GUI TYPE
@@ -242,7 +240,7 @@ begin
   for NPC in Self do
   begin
     // Skip NPCs that are in combat with other players
-    if NPC.InCombat then Continue;
+    // Unknown declaration "InCombat"  if NPC.InCombat then Continue;
     
     Dist := NPC.Coordinates[0].DistanceTo(Point);
     if Dist < MinDist then
@@ -282,8 +280,8 @@ begin
   begin
     Inventory.ClickSlot(FoodSlot);
     Wait(Random(800, 1500));  // Random delay after eating
-    Inc(Stats.FoodEaten);
-    WriteLn('Food eaten. Total food consumed: ', Stats.FoodEaten);
+    //Unknown declaration "FoodEaten" Inc(Stats.FoodEaten);
+    // Unknown declaration "FoodEaten"WriteLn('Food eaten. Total food consumed: ', Stats.FoodEaten);
     Result := True;
   end
   else
@@ -320,7 +318,7 @@ begin
   if Result then
   begin
     WriteLn('DEATH DETECTED! Incrementing death counter.');
-    Inc(Stats.DeathCount);
+    //Inc(Stats.DeathCount);
   end;
 end;
 
@@ -356,7 +354,7 @@ begin
     2: // Random mouse movement
     begin
       WriteLn('[ANTIBAN] Random mouse movement');
-      Mouse.Move(Box(100, 100, 700, 500).Random());
+      //Don't know which overloaded method to call with params (*unknown*) at line 357, column 12 in file "C:\Users\linas\Desktop\Aurimo\rs-scripts\my scripts\betterSeagulSlayer.simba"Mouse.Move(Box(100, 100, 700, 500).Random());
       Wait(Random(300, 800));
     end;
     
@@ -369,7 +367,7 @@ begin
     4: // Right click examine
     begin
       WriteLn('[ANTIBAN] Examining surroundings');
-      Mouse.Move(Mainscreen.Bounds.Random());
+      //Mouse.Move(Mainscreen.Bounds.Random());
       if Random(2) = 0 then
         Mouse.Click(MOUSE_RIGHT);
       Wait(Random(500, 1500));
