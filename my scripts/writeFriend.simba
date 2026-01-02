@@ -1,0 +1,15 @@
+var
+  friend: TRSFriend;
+begin
+  friend := Friends.Find('SomePlayer');
+  if friend <> Default(TRSFriend) then
+   WriteLn Friends.SendMessage('SomePlayer', 'Hello there!');
+  else
+    WriteLn('Friend not found.');
+end;
+
+
+function TRSFriends.Find(name: String): TRSFriend;
+
+
+WriteLn RSCacheParser.Brightness();
