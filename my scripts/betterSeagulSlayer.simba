@@ -26,7 +26,7 @@ var
   Duration: Integer = 20;                    // Duration in minutes to train each combat style
   AllCombatStyles: Boolean = True;           // Flag to train all combat styles
   UseFood: Boolean = True;                   // Enable food eating
-  FoodName: String = 'Trout';              // Name of food to eat
+  FoodNames: TStringArray;                   // Array of food names to eat (in priority order)
   UseAntiban: Boolean = True;                // Enable antiban features
   RandomizeDuration: Boolean = True;         // Add ±5 minute variation to duration
   TakeBreaks: Boolean = True;
@@ -88,15 +88,25 @@ begin
   // Get all configuration values from GUI
   AllCombatStyles := Self.AllCombat.IsChecked();
   UseFood := Self.UseFoodCheck.IsChecked();
-  FoodName := Self.FoodNameBox.GetText();
+  FoodNames := Self.FoodNameBox.GetText().Split(',');
   UseAntiban := Self.UseAntibanCheck.IsChecked();
   RandomizeDuration := Self.RandomizeDurationCheck.IsChecked();
   TakeBreaks := Self.TakeBreaksCheck.IsChecked();
 
-  // Validate food name if food eating is enabled
-  if UseFood and (FoodName = '') then
+  // Trim whitespace from food names
+  for i := 0 to High(FoodNames) do
+    FoodNames[i] := FoodNames[i].Trim();
+
+  // Validate food names if food eating is enabled
+  if UseFood and (Length(FoodNames) = 0) then
   begin
-    WriteLn('ERROR: Please specify a food name');
+    WriteLn('ERROR: Please specify at least one food name');
+    Exit;
+  end;
+  
+  if UseFood and ((Length(FoodNames) = 1) and (FoodNames[0] = '')) then
+  begin
+    WriteLn('ERROR: Please specify at least one food name');
     Exit;
   end;
 
@@ -154,11 +164,11 @@ begin
   with Self.FoodNameBox do
   begin
     Create(Tab);
-    SetCaption('Food name:');
+    SetCaption('Food names (comma separated):');
     SetLeft(30);
     SetTop(240);
-    SetWidth(TControl.AdjustToDPI(200));
-    SetText(FoodName);
+    SetWidth(TControl.AdjustToDPI(300));
+    SetText('Trout, Salmon, Tuna');
   end;
 
   // Antiban Checkbox
@@ -270,27 +280,34 @@ end;
 
 function EatFood(): Boolean;
 var
-  FoodSlot: Integer;
+  FoodSlot, i: Integer;
+  CurrentFood: String;
 begin
   Result := False;
   
   if not UseFood then Exit;
   
-  WriteLn('Attempting to eat ', FoodName, '...');
+  WriteLn('Attempting to eat food...');
   
-  // Find food in inventory
-  if Inventory.FindItem(FoodName, FoodSlot) then
+  // Try each food type in priority order
+  for i := 0 to High(FoodNames) do
   begin
-    Inventory.ClickSlot(FoodSlot);
-    Wait(Random(800, 1500));  // Random delay after eating
-    //Unknown declaration "FoodEaten" Inc(PersonalStats.FoodEaten);
-    // Unknown declaration "FoodEaten"WriteLn('Food eaten. Total food consumed: ', PersonalStats.FoodEaten);
-    Result := True;
-  end
-  else
-  begin
-    WriteLn('WARNING: Out of food! Consider stopping script.');
+    CurrentFood := FoodNames[i];
+    if Inventory.FindItem(CurrentFood, FoodSlot) then
+    begin
+      WriteLn('Eating: ', CurrentFood);
+      Inventory.ClickSlot(FoodSlot);
+      Wait(Random(800, 1500));  // Random delay after eating
+      Inc(PersonalStats.FoodEaten);
+      WriteLn('Food eaten. Total food consumed: ', PersonalStats.FoodEaten);
+      Result := True;
+      Exit;
+    end;
   end;
+  
+  // No food found
+  if not Result then
+    WriteLn('WARNING: Out of all food types! Consider stopping script.');
 end;
 
 function CheckAndEat(): Boolean;
@@ -675,7 +692,11 @@ begin
   WriteLn('  All combat styles: ', AllCombatStyles);
   WriteLn('  Use food: ', UseFood);
   if UseFood then
-    WriteLn('  Food type: ', FoodName);
+  begin
+    WriteLn('  Food types (priority order):');
+    for i := 0 to High(FoodNames) do
+      WriteLn('    ', i + 1, '. ', FoodNames[i]);
+  end;
   WriteLn('  Antiban enabled: ', UseAntiban);
   WriteLn('  Randomize duration: ', RandomizeDuration);
   WriteLn('  Take breaks: ', TakeBreaks);
