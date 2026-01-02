@@ -1,0 +1,418 @@
+program BootiesTelealcher;
+{$DEFINE SCRIPT_ID := 'bf181a52-d21f-4732-810d-625a4e9ca666'}
+{$DEFINE SCRIPT_REVISION := 'v3.3'}
+{$I WaspLib/osr.simba}
+{$I WaspLib/optional/handlers/alchhandler.simba}
+
+// World hopping setup
+var
+  ENABLEWORLDHOPPING: Boolean = True;
+  WORLDHOPINTERVAL: Integer = 45;
+  NextWorldHopTime: UInt64;
+  WorldHopsCompleted: Int32;
+  LastWorldHopTime: UInt64;
+  NextStatsReportTime: UInt64;
+  InitialXP: Integer;
+  SelectedTeleport: ERSSpell;
+
+// --- New Procedure for Safe Logout ---
+procedure SafeLogoutAndTerminate(reason: String);
+begin
+  WriteLn('FAILSAFE TRIGGERED: ' + reason);
+  if RSClient.IsLoggedIn() then
+  begin
+    WriteLn('Attempting to log out...');
+    if Logout.ClickLogout() then
+      WriteLn('Successfully logged out.')
+    else
+      WriteLn('Could not automatically log out.');
+  end;
+  TerminateScript(reason);
+end;
+
+function GetRandomWorldHopTime(): UInt64;
+var
+  baseMs: UInt64;
+  variation: Integer;
+begin
+  baseMs := WORLDHOPINTERVAL * 60000;
+  variation := Random(-10, 10);
+  Result := baseMs + Round(baseMs * (variation / 100.0));
+end;
+
+procedure SetupWorldHopping();
+begin
+  if not ENABLEWORLDHOPPING then Exit;
+  if Length(Login.GetPlayer().Worlds) < 2 then
+  begin
+    WriteLn('ERROR: World hopping is enabled but fewer than 2 worlds configured!');
+    Logout.ClickLogout();
+    TerminateScript('World hopping requires >= 2 worlds');
+  end;
+  NextWorldHopTime := GetTickCount() + GetRandomWorldHopTime();
+  WorldHopsCompleted := 0;
+  LastWorldHopTime := GetTickCount();
+  NextStatsReportTime := GetTickCount() + 5000;
+end;
+
+function ShouldHopWorld(): Boolean;
+begin
+  if not ENABLEWORLDHOPPING then Exit(False);
+  if GetTickCount() < NextWorldHopTime then Exit(False);
+  Result := True;
+end;
+
+procedure DoWorldHop();
+var
+  currentW, targetW: Int32;
+  allW, avail: TIntegerArray;
+  i: Int32;
+begin
+  Wait(4000);
+  if not Logout.Open() then
+  begin
+    NextWorldHopTime := GetTickCount() + 120000;
+    Exit;
+  end;
+
+  Logout.GetButton(ERSLogoutButton.WORLD_SWITCHER).Click(MOUSE_LEFT);
+  WaitUntil((currentW := WorldHopper.GetCurrentWorld()) <> 0, 50, 5000);
+
+  allW := Login.GetPlayer().Worlds;
+  avail := [];
+  for i := 0 to High(allW) do
+    if allW[i] <> currentW then
+      avail += allW[i];
+
+  if Length(avail) = 0 then
+  begin
+    ENABLEWORLDHOPPING := False;
+    WriteLn('No alternate worlds left -> disabling hopping');
+    Exit;
+  end;
+
+  targetW := avail[Random(Length(avail))];
+  if WorldHopper.Hop([targetW]) then
+  begin
+    Inc(WorldHopsCompleted);
+    LastWorldHopTime := GetTickCount();
+    NextWorldHopTime := GetTickCount() + GetRandomWorldHopTime();
+    WriteLn('Hopped -> now in world ' + ToStr(targetW) +
+            '  (hops: ' + ToStr(WorldHopsCompleted) + '). Next in ' +
+            SRL.MsToTime(NextWorldHopTime - GetTickCount(), Time_Short));
+  end
+  else
+    NextWorldHopTime := GetTickCount() + 120000;
+end;
+
+procedure TAntiban.BioClick(button: Int32; {$H-}max: Int32 = 3); override; {$H+}
+begin
+  Mouse.Click(button);
+end;
+
+procedure Wait(Milliseconds: UInt32); override;
+var
+  t: Double;
+begin
+  t := PerformanceTimer;
+  while (t + milliseconds) > PerformanceTimer do
+  begin end;
+end;
+
+procedure TMouse.Click(Button: Int32); override;
+begin
+  Self.Hold(Button);
+  Wait(SRL.TruncatedGauss(50, 110));
+  Self.Release(Button);
+end;
+
+function TRSXPBar.EarnedXP(reject: Boolean): Boolean; overload;
+begin
+  Result := Self.Read() > Self.Tracker.Previous;
+  if reject and ((Self.Read() - Self.Tracker.Previous) > 500) then Exit(False);
+  if Result and Self.Tracker.IsSetup then
+  begin
+    APIClient.UpdatePayload(Self.Tracker.Current - Self.Tracker.Previous, 0, 0);
+    WL.Activity.Restart();
+    Self.Tracker.Previous := Self.Tracker.Current;
+  end;
+end;
+
+function TRSAlchHandler.SelectItem(hi: Boolean = True; waitTimer: Boolean = False): Boolean; override;
+var
+  attempt, slot, spellSlot: Int32;
+  box: TBox;
+  slots: TIntegerArray;
+begin
+  if hi then
+    Self.Timer.Length := 4 * 600
+  else
+    Self.Timer.Length := 3 * 600;
+
+  spellSlot := Self.SlotUnder;
+  for attempt := 0 to 2 do
+  begin
+    if Self.Item.IsNull() then
+      Self.Item := Self.GetAlchItem();
+
+    if Self.Item.IsNull() then Exit;
+
+    if Inventory.FindItem(Self.Item, slot) then
+    begin
+      if (slot <> spellSlot) and (Inventory.Items.CountStack(slot) > 0) then
+      begin
+        Self.DisableCast();
+        if Inventory.Items.Move(slot, spellSlot) then Exit;
+        Break;
+      end;
+      if SRL.Dice(99.5) then
+      begin
+        if not Inventory.MouseSlot(slot) and not MainScreen.IsUpText('>') then Exit;
+        if not waitTimer then
+        begin
+          if not Self.Timer.IsFinished() and (Self.Timer.Timeout > 0) then Exit;
+        end else
+          WaitUntil(Self.Timer.IsFinished(), 50, 3100);
+        Mouse.Click(MOUSE_LEFT);
+        if not WaitUntil(XPBar.EarnedXP() or Magic.IsOpen(), 300, 3000) then Exit;
+        Self.Timer.Restart();
+        Self.AddProfit(hi);
+        Exit(True);
+      end;
+      slots := Inventory.GetEmptySlots();
+      if slots <> [] then
+      begin
+        slot := Inventory.RandomSlotNearby(slot, slots);
+        Inventory.ClickSlot(slot, '>');
+      end;
+      Exit;
+    end
+    else if ItemData.GetDefinitionBoolean(Self.Item, 'equipable') then
+    begin
+      Self.DisableCast();
+      if Equipment.FindItem(Self.Item, box) then
+      begin
+        Mouse.Click(box, MOUSE_LEFT);
+        Exit;
+      end;
+    end;
+    Self.Item := '';
+  end;
+end;
+
+var
+  t: TStopWatch;
+
+type
+  MagicGoBrrr = record(TBaseScript)
+    dummy: String;
+  end;
+
+  TCfg = Record(TScriptForm)
+    EnableWorldHoppingCheckBox: TLabeledCheckBox;
+    WorldHopIntervalInput: TLabeledEdit;
+    TeleportComboBox: TLabeledComboBox;
+    dummy: String;
+  end;
+
+var
+  script: MagicGoBrrr;
+  cfg: TCfg;
+
+procedure TCfg.StartScript(Sender: TObject); override;
+begin
+  ENABLEWORLDHOPPING := Self.EnableWorldHoppingCheckBox.IsChecked();
+  WORLDHOPINTERVAL := StrToIntDef(Self.WorldHopIntervalInput.GetText(), WORLDHOPINTERVAL);
+
+  case Self.TeleportComboBox.GetItemIndex() of
+    0: SelectedTeleport := ERSSpell.CAMELOT_TELEPORT;
+    1: SelectedTeleport := ERSSpell.VARROCK_TELEPORT;
+    2: SelectedTeleport := ERSSpell.TELEPORT_TO_KOUREND;
+    3: SelectedTeleport := ERSSpell.ARDOUGNE_TELEPORT;
+    4: SelectedTeleport := ERSSpell.CIVITAS_ILLA_FORTIS_TELEPORT;
+    5: SelectedTeleport := ERSSpell.WATCHTOWER_TELEPORT;
+    6: SelectedTeleport := ERSSpell.TROLLHEIM_TELEPORT;
+  else
+    SelectedTeleport := ERSSpell.CAMELOT_TELEPORT;
+  end;
+
+  inherited;
+end;
+
+procedure TCfg.WorldHoppingCheckboxChanged({$H-} sender: TObject); {$H+}
+begin
+  ENABLEWORLDHOPPING := Self.EnableWorldHoppingCheckBox.IsChecked();
+  if Assigned(Self.WorldHopIntervalInput) then
+    Self.WorldHopIntervalInput.SetVisible(ENABLEWORLDHOPPING);
+end;
+
+procedure TCfg.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('Bootie Telealcher');
+  Self.Start.setOnClick(@Self.StartScript);
+
+  Self.CreateAlchemyPanel();
+
+  with Self.TeleportComboBox do
+  begin
+    Create(Self.Tabs[0]);
+    SetCaption('Teleport Spell');
+    SetLeft(TControl.AdjustToDPI(275));
+    SetTop(TControl.AdjustToDPI(35));
+    SetWidth(TControl.AdjustToDPI(200));
+    AddItem('Camelot Teleport');
+    AddItem('Varrock Teleport');
+    AddItem('Kourend Castle Teleport');
+    AddItem('Ardougne Teleport');
+    AddItem('Civitas illa Fortis Teleport');
+    AddItem('Watchtower Teleport');
+    AddItem('Trollheim Teleport');
+    SetItemIndex(0);
+  end;
+
+  Self.AddTab('Account Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(tab);
+  Self.CreateAntibanManager();
+
+  for tab in Self.Tabs do
+  begin
+    if tab.GetCaption() = 'Antiban Manager' then
+    begin
+      with Self.EnableWorldHoppingCheckBox do
+      begin
+        Create(tab);
+        SetCaption('Enable World Hopping');
+        SetLeft(TControl.AdjustToDPI(300));
+        SetTop(TControl.AdjustToDPI(180));
+        SetChecked(ENABLEWORLDHOPPING);
+        CheckBox.SetOnChange(@WorldHoppingCheckboxChanged);
+      end;
+      with Self.WorldHopIntervalInput do
+      begin
+        Create(tab);
+        SetCaption('World Hop Interval (minutes)');
+        SetLeft(TControl.AdjustToDPI(300));
+        SetTop(TControl.AdjustToDPI(200));
+        SetWidth(TControl.AdjustToDPI(160));
+        SetText(IntToStr(WORLDHOPINTERVAL));
+        Edit.SetOnKeyPress(@Edit.NumberField);
+      end;
+      Break;
+    end;
+  end;
+  Self.CreateWaspLibSettings();
+  Self.CreateAPISettings();
+
+  inherited;
+end;
+
+procedure PrintCombinedStats();
+var
+  xpGainedThisSession: Integer;
+begin
+  if GetTickCount() > NextStatsReportTime then
+  begin
+    WriteLn('=====================================');
+    WriteLn('        Script Statistics');
+    WriteLn('=====================================');
+    WriteLn('Runtime: ' + SRL.MsToTime(script.TimeRunning.ElapsedTime(), Time_Short));
+    xpGainedThisSession := XPBar.Tracker.Current - InitialXP;
+    WriteLn('Total Actions: ' + ToStr(script.TotalActions));
+    WriteLn('Total Profit: ' + ToStr(RSAlchHandler.TotalProfit) + ' GP');
+    WriteLn('XP Gained: ' + ToStr(xpGainedThisSession) + 'XP');
+    if script.TimeRunning.ElapsedTime() > 0 then
+      WriteLn('XP Per Hour: ' + ToStr(Round((xpGainedThisSession * 3600000) / script.TimeRunning.ElapsedTime())));
+    if ENABLEWORLDHOPPING then
+    begin
+      WriteLn('-------------------------------------');
+      WriteLn('World Hopping Stats');
+      WriteLn('Hops completed: ' + ToStr(WorldHopsCompleted));
+      WriteLn('Next hop in: ' + SRL.MsToTime(NextWorldHopTime - GetTickCount(), Time_Short));
+    end;
+    WriteLn('=====================================');
+    NextStatsReportTime := GetTickCount() + 5000;
+  end;
+end;
+
+procedure MagicGoBrrr.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  inherited;
+  XPBar.EarnedXP();
+  InitialXP := XPBar.Tracker.Current;
+  Mouse.Speed := 25;
+  Mouse.Gravity := 5;
+  Mouse.Wind := 1;
+  Mouse.CanIdle := False;
+  Mouse.MissChance := 0;
+  Self.PrintTimer.Init(5000);
+  SetupWorldHopping();
+end;
+
+function TBaseScript.ShouldStop(): Boolean; override;
+begin
+  if InRange(Self.ActionLimit, 1, Self.TotalActions) then
+  begin
+    SaveScreenshot('ScriptEnding/shouldstop' + Self.Name, True);
+    Self.DebugLn('Maximum actions reached: ' + ToStr(Self.TotalActions) + '/' + ToStr(Self.ActionLimit) + '.');
+    Exit(True);
+  end;
+  if InRange(Self.TimeLimit, 1, Self.TimeRunning.ElapsedTime()) then
+  begin
+    SaveScreenshot('ScriptEnding/shouldstop' + Self.Name, True);
+    Self.DebugLn('Maximum time reached: ' + ToStr(Round(Self.TimeRunning.ElapsedTime()/ONE_MINUTE)) + '/' + ToStr(Round(Self.TimeLimit/ONE_MINUTE)) + ' mins.');
+    Exit(True);
+  end;
+  if RSAlchHandler.Disabled then Exit(True);
+end;
+
+procedure MagicGoBrrr.Run();
+var
+  lawrunePrice, preActionXP: Integer;
+begin
+  Self.Init(WLSettings.MaxActions, WLSettings.MaxTime);
+  lawrunePrice := ItemData.GetAverage('Law rune');
+  WL.Activity.Init(5000);
+  while not Self.ShouldStop() do
+  begin
+    PrintCombinedStats();
+    if not RSClient.IsLoggedIn then Login.LoginPlayer;
+
+    // --- FAILSAFE LOGIC WITH LOGOUT ---
+
+    // 1. Check XP before alchemy
+    preActionXP := XPBar.Tracker.Current;
+    RSAlchHandler.CastAlchemy(True, True);
+
+    // 2. Check if alchemy XP was gained.
+    Wait(200);
+    if XPBar.Tracker.Current <= preActionXP then
+      SafeLogoutAndTerminate('High Alchemy failed to grant XP.');
+
+    // 3. Check XP before teleport
+    preActionXP := XPBar.Tracker.Current;
+    Magic.ClickSpell(SelectedTeleport);
+
+    // 4. Wait for teleport XP to be granted
+    if not WaitUntil(XPBar.Read() > preActionXP, 50, 3000) then
+      SafeLogoutAndTerminate('Teleport failed to grant XP. Check runes/level.');
+    // --- END FAILSAFE LOGIC ---
+
+    Self.TotalActions += 1;
+    Self.TotalProfit := RSAlchHandler.TotalProfit - Self.TotalActions*lawrunePrice;
+
+    Self.DoAntiban();
+    if ShouldHopWorld() then
+      DoWorldHop();
+
+    // Randomized delay after a full cycle for client stability
+    Wait(Random(1400, 1600));
+  end;
+end;
+
+begin
+  cfg.Run();
+  script.Run();
+end;
