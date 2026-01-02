@@ -236,18 +236,18 @@ begin
   Result := [];
   
   // Get player position on minimap
-  PlayerPos := Minimap.Center();
+  //PlayerPos := Minimap.Center();
   
   // Find all NPCs with matching name
-  NPCs := Minimap.FindNPCs(NPCName);
+  var aaa := NPCs.GetAll(NPCName);
   
-  if Length(NPCs) = 0 then
+  if Length(aaa) = 0 then
   begin
     WriteLn('No NPCs found with name: ', NPCName);
     Exit;
   end;
   
-  WriteLn('Found ', Length(NPCs), ' ', NPCName, '(s)');
+  WriteLn('Found ', Length(aaa), ' ', NPCName, '(s)');
   
   // Find nearest NPC
   MinDist := $FFFFFF;

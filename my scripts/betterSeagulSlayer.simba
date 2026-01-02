@@ -26,10 +26,11 @@ var
   Duration: Integer = 20;                    // Duration in minutes to train each combat style
   AllCombatStyles: Boolean = True;           // Flag to train all combat styles
   UseFood: Boolean = True;                   // Enable food eating
-  FoodName: String = 'Lobster';              // Name of food to eat
+  FoodName: String = 'Trout';              // Name of food to eat
   UseAntiban: Boolean = True;                // Enable antiban features
   RandomizeDuration: Boolean = True;         // Add ±5 minute variation to duration
-  TakeBreaks: Boolean = True;                // Enable break handler
+  TakeBreaks: Boolean = True;
+  NpcName := 'Goblin';               // Enable break handler
   
 // ============================================================================
 // STATISTICS TRACKING
@@ -492,7 +493,7 @@ begin
     if not NPC.IsVisible() then
     begin
       WriteLn('NPC not visible, re-scanning...');
-      NPCArr := NPCs.GetAll('Seagull');
+      NPCArr := NPCs.GetAll(NpcName);
       if Length(NPCArr) = 0 then
       begin
         WriteLn('ERROR: No seagulls found!');
@@ -589,7 +590,7 @@ begin
   PersonalStats.CurrentStyle := StyleIndex;
   
   // Initial NPC scan
-  NPCArr := NPCs.GetAll('Seagull');
+  NPCArr := NPCs.GetAll(NpcName);
   if Length(NPCArr) = 0 then
   begin
     WriteLn('FATAL ERROR: No seagulls found in area!');
@@ -630,9 +631,12 @@ begin
     if AttackCount mod NPC_RESCAN_INTERVAL = 0 then
     begin
       WriteLn('Re-scanning for seagulls...');
-      NPCArr := NPCs.GetAll('Seagull');
+      NPCArr := NPCs.GetAll(NpcName);
       if Length(NPCArr) > 0 then
+      begin
         NPC := NPCArr.FindNearest(Map.Position);
+      end;
+        WriteLn('No npx');
     end;
     
     // Attack seagull
@@ -686,7 +690,7 @@ begin
   
   // Setup map and NPCs
   WriteLn('Setting up map chunks...');
-  Map.SetupChunks([[[46, 51, 48, 49], [0]]]);
+  Map.SetupChunks([[[29, 81, 29, 81], [0]]]);
   
   WriteLn('Initializing NPC detection...');
   NPCs.Setup(Map.NPCs, @Map.Walker);
