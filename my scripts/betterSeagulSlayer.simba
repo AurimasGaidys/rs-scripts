@@ -63,6 +63,9 @@ type
     TakeBreaksCheck: TLabeledCheckbox;
   end;
 
+  var
+   fi: Int32
+
 // ============================================================================
 // StartScript - Called when user clicks the Start button
 // Validates and retrieves values from GUI form
@@ -93,9 +96,10 @@ begin
   RandomizeDuration := Self.RandomizeDurationCheck.IsChecked();
   TakeBreaks := Self.TakeBreaksCheck.IsChecked();
 
+
   // Trim whitespace from food names
-  for i := 0 to High(FoodNames) do
-    FoodNames[i] := FoodNames[i].Trim();
+  for fi := 0 to High(FoodNames) do
+    FoodNames[fi] := FoodNames[fi].Trim();
 
   // Validate food names if food eating is enabled
   if UseFood and (Length(FoodNames) = 0) then
@@ -168,7 +172,7 @@ begin
     SetLeft(30);
     SetTop(240);
     SetWidth(TControl.AdjustToDPI(300));
-    SetText('Trout, Salmon, Tuna');
+    SetText('Trout, Salmon, Pike');
   end;
 
   // Antiban Checkbox

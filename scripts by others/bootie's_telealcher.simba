@@ -173,10 +173,10 @@ procedure MagicGoBrrr.Init(maxActions: UInt32; maxTime: UInt64); override;
 begin
   inherited;
   XPBar.EarnedXP();
-  Mouse.Speed := 25;
+  Mouse.Speed := 15;
   Mouse.Gravity := 5;
-  Mouse.Wind := 1;
-  Mouse.CanIdle := False;
+  Mouse.Wind := 2;
+  Mouse.CanIdle := true;
   Mouse.MissChance := 0;
   Self.PrintTimer.Init(30000);
 end;
@@ -208,16 +208,19 @@ var
 begin
   Self.Init(WLSettings.MaxActions, WLSettings.MaxTime);
   lawrunePrice := ItemData.GetAverage('Law rune');
-  WL.Activity.Init(30000);
+  WL.Activity.Init(40000);
   while not Self.ShouldStop() do
   begin
     Self.SetAction(ToString(Self.TotalActions));
-
     if not RSClient.IsLoggedIn then Login.LoginPlayer;
 
     RSAlchHandler.CastAlchemy(True, True);
 
     Magic.ClickSpell(ERSSpell.FALADOR_TELEPORT);
+    //Wait(1900,2000);
+    RSAlchHandler.CastAlchemy(True, True);
+    WaitUntil(XPBar.EarnedXP(True), 50, 2000);
+    //Magic.ClickSpell(ERSSpell.FALADOR_TELEPORT);
     Self.TotalActions += 1;
     Self.TotalProfit := RSAlchHandler.TotalProfit - Self.TotalActions*LawRunePrice;
     WaitUntil(XPBar.EarnedXP(True), 50, 2000);
