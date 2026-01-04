@@ -1,0 +1,75 @@
+{******************************************************************************
+ * SuperHeater - Helper Functions Module
+ * 
+ * This file contains utility functions and helper methods that don't
+ * belong to specific classes.
+ *****************************************************************************}
+
+{******************************************************************************
+ * GetOreQuantity
+ * 
+ * Determines ore quantity based on whether coal bag is being used.
+ * 
+ * @param useCoalBag: Whether coal bag is enabled
+ * @param quantityWithoutBag: Quantity when not using coal bag
+ * @param quantityWithBag: Quantity when using coal bag
+ * @return: The appropriate ore quantity
+ *****************************************************************************}
+function GetOreQuantity(useCoalBag: Boolean; quantityWithoutBag, quantityWithBag: Integer): Integer;
+begin
+  if useCoalBag then 
+    Result := quantityWithBag
+  else 
+    Result := quantityWithoutBag;
+end;
+
+{******************************************************************************
+ * Inventory.ClickItem (Override)
+ * 
+ * Override for clicking inventory items with better context menu handling.
+ * Prevents accidental menu openings and ensures correct option selection.
+ * 
+ * @param item: The item to click
+ * @param option: The option to select (empty for left click)
+ * @return: True if item was clicked successfully
+ *****************************************************************************}
+function Inventory.ClickItem(item: TRSItem; option: String = ''): Boolean; override;
+var
+  upText: String;
+begin
+  if Inventory.MouseItem(item) then
+  begin
+    upText := MainScreen.GetUpText();
+
+    // Cancel if we didn't want a menu but got one
+    if not option.Contains('>') and upText.Contains('>') then
+    begin
+      WriteLn('Context menu appeared unexpectedly - canceling');
+      Exit(ChooseOption.Select('Cancel'));
+    end;
+
+    // Simple left click if no option specified or uptext matches
+    if (option = '') or upText.Contains(option) then
+    begin
+      Mouse.Click(MOUSE_LEFT);
+      Exit(True);
+    end;
+
+    // Select from right-click menu
+    Result := ChooseOption.Select(option);
+  end;
+end;
+
+{******************************************************************************
+ * TAntiban.Setup (Override)
+ * 
+ * Configures antiban settings specific to the SuperHeater script.
+ * Sets relevant skills and zoom levels.
+ *****************************************************************************}
+procedure TAntiban.Setup(); override;
+begin
+  Self.Skills := [ERSSkill.MAGIC, ERSSkill.SMITHING, ERSSkill.TOTAL];
+  Self.MinZoom := 15;
+  Self.MaxZoom := 85;
+  inherited;
+end;

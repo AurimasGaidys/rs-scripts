@@ -1,0 +1,42 @@
+{******************************************************************************
+ * SuperHeater - Types and Enums Module
+ * 
+ * This file contains all type definitions, enums, and record structures
+ * used throughout the script.
+ *****************************************************************************}
+
+// Script states enumeration
+type
+  EState = (
+    LEVEL_UP,
+    CLOSE_CONTEXT,
+    OPEN_BANK,
+    WITHDRAW_MATERIAL,
+    DEPOSIT_PRODUCT,
+    OPEN_COLLECT,
+    HANDLE_COLLECT,
+    CLOSE_INTERFACE,
+    CAST_SPELL,
+    END_SCRIPT
+  );
+
+// Main script record type
+type
+  TSuperHeater = record(TBaseBankScript)
+    State: EState;
+    Spell: ERSSpell;
+    Runes, PrimaryOre,
+    SecondaryOre, Bar: TRSBankItem;
+    SuperHeating: Boolean;
+    CoalBag: TRSBankItem;
+    ItemCount: Integer;
+    SpellCastFailed: Integer;
+  end;
+
+// GUI configuration record type
+type
+  TSuperHeaterConfig = record(TScriptForm)
+    BarSelector: TLabeledCombobox;
+    CoalBagCheck: TCheckBox;
+    Instructions: TLabel;
+  end;
