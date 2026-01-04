@@ -35,7 +35,7 @@ begin
 
   Self.AddTab('Script Settings');
   tab := Self.Tabs[High(Self.Tabs)];
-  Self.CreateAccountManager(tab);
+  Self.CreateAccountManager(tab); // do we need it ? :D
 
   // Bar type selector dropdown
   with Self.BarSelector do

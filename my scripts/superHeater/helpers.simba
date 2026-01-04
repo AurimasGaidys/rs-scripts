@@ -28,6 +28,7 @@ end;
  * 
  * Override for clicking inventory items with better context menu handling.
  * Prevents accidental menu openings and ensures correct option selection.
+ * MODIFICATION: Clicks on the LAST item for first 5 casts, then clicks first item.
  * 
  * @param item: The item to click
  * @param option: The option to select (empty for left click)
@@ -36,8 +37,28 @@ end;
 function Inventory.ClickItem(item: TRSItem; option: String = ''): Boolean; override;
 var
   upText: String;
+  slots: TIntegerArray;
+  slotIndex: Int32;
 begin
-  if Inventory.MouseItem(item) then
+  // Find all slots containing the item
+  slots := Inventory.FindItem(item);
+  
+  if Length(slots) = 0 then
+    Exit(False);
+  
+  // Click LAST item for first 5 casts, then click FIRST item
+  if castCount <= 5 then
+  begin
+    slotIndex := slots[High(slots)]; // Last slot
+    WriteLn('Clicking LAST item (cast #', castCount, ')');
+  end
+  else
+  begin
+    slotIndex := slots[0]; // First slot
+  end;
+  
+  // Mouse to the selected item slot
+  if Inventory.MouseSlot(slotIndex) then
   begin
     upText := MainScreen.GetUpText();
 

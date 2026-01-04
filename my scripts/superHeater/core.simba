@@ -137,12 +137,19 @@ end;
  * TSuperHeater.SafeBankOpen
  * 
  * Safely opens the bank by deselecting any active spell first.
+ * MODIFICATION: Resets castCount counter when bank is successfully opened.
  * 
  * @return: True if bank opened successfully
  *****************************************************************************}
 function TSuperHeater.SafeBankOpen(): Boolean;
 begin
   Result := Magic.Deselect and Bank.Open;
+  
+  if Result then
+  begin
+    castCount := 0;
+    WriteLn('Bank opened - castCount reset to 0');
+  end;
 end;
 
 {******************************************************************************
