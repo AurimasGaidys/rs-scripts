@@ -190,7 +190,7 @@ end;
 
 function GetQuantity(useCoalBag: Boolean; qtyNoBag, qtyWithBag: Int32): Int32;
 begin
-  Result := IfThen(useCoalBag, qtyWithBag, qtyNoBag);
+  Result := qtyNoBag//IfThen(useCoalBag, qtyWithBag, qtyNoBag);
 end;
 
 // ============================================================================
@@ -321,13 +321,6 @@ var
   excludeItems: TRSItemArray;
 begin
   excludeItems := [Self.Runes.Item];
-  
-  if USE_COALBAG then
-  begin
-    SetLength(excludeItems, Length(excludeItems) + 1);
-    excludeItems[High(excludeItems)] := Self.CoalBag.Item;
-  end;
-
   barCount := Inventory.CountItem(Bar.Item);
   
   if Bank.DepositItem(Bar, True) then
@@ -347,18 +340,6 @@ begin
 
   if not Inventory.ContainsItem(Self.Runes.Item) then
     Self.Withdraw(Self.Runes);
-
-  if USE_COALBAG then
-  begin
-    if not Inventory.ContainsItem(Self.CoalBag.Item) then
-      Self.Withdraw(Self.CoalBag);
-
-    if Inventory.ContainsItem(Self.CoalBag.Item) then
-    begin
-      WaitUntil(Inventory.ClickItem(Self.CoalBag.Item, 'Empty'), TIMEOUT_INTERVAL, TIMEOUT_SHORT);
-      WaitUntil(Inventory.ClickItem(Self.CoalBag.Item, 'Fill'), TIMEOUT_INTERVAL, TIMEOUT_SHORT);
-    end;
-  end;
 
   Self.Withdraw(Self.PrimaryOre);
   
@@ -402,12 +383,12 @@ function TSuperHeater.HandleBank(): EState;
 begin
   if Inventory.ContainsItem(Self.Bar.Item) then
     Exit(EState.DEPOSIT_PRODUCT);
-    
-  if BankEmpty or HasRequiredItems() then
-    Exit(EState.CLOSE_INTERFACE);
-    
+
   if not HasRequiredItems() then
     Exit(EState.WITHDRAW_MATERIAL);
+
+  if BankEmpty or HasRequiredItems() then
+    Exit(EState.CLOSE_INTERFACE);
     
   ItemCount := Inventory.CountItem(PrimaryOre.Item);
   Result := EState.CLOSE_INTERFACE;
@@ -600,4 +581,6 @@ var
 begin
   if USE_GUI then
     SuperHeaterConfig.Run();
+      RSClient.RemoteInput.EnableRealInput;
+  SuperHeater.Run(WLSettings.MaxActions, WLSettings.MaxTime);
 end.

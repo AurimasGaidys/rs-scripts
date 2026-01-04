@@ -342,7 +342,7 @@ begin
   inherited;
   XPBar.EarnedXP();
   InitialXP := XPBar.Tracker.Current;
-  Mouse.Speed := 25;
+  Mouse.Speed := 15;
   Mouse.Gravity := 5;
   Mouse.Wind := 1;
   Mouse.CanIdle := False;

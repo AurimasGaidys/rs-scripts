@@ -406,7 +406,6 @@ procedure TSuperHeaterConfig.Run(); override;
 var
   tab: TTabSheet;
 begin
-
   Self.Setup('SuperHeater Config');
   Self.Start.SetOnClick(@Self.StartScript);
 
