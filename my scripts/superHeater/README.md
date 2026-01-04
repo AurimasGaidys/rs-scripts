@@ -179,3 +179,18 @@ Original script by WaspScripts community. Refactored into modular architecture f
 **Version**: 8  
 **Last Updated**: 2026  
 **Architecture**: Master Architect Design Pattern
+
+
+old bank 
+begin
+  if Inventory.ContainsItem(Self.Bar.Item) then
+    Result := EState.DEPOSIT_PRODUCT
+  else if BankEmpty or HasRequiredItems() then
+    Result := EState.CLOSE_INTERFACE
+  else if not HasRequiredItems() then
+    Result := EState.WITHDRAW_MATERIAL
+  else
+    Result := EState.CLOSE_INTERFACE;
+    
+  ItemCount := Inventory.CountItem(PrimaryOre.Item);
+end;

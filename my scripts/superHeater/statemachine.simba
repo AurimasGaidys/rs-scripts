@@ -32,17 +32,105 @@ end;
  * @return: The appropriate state for bank operations
  *****************************************************************************}
 function TSuperHeater.HandleBank(): EState;
+var
+  hasBar, hasPrimaryOre, hasSecondaryOre, hasRunes: Boolean;
+  barCount, primaryOreCount, secondaryOreCount, runeCount: Int32;
+  bankIsEmpty, hasAllRequired: Boolean;
 begin
-  if Inventory.ContainsItem(Self.Bar.Item) then
-    Result := EState.DEPOSIT_PRODUCT
-  else if BankEmpty or HasRequiredItems() then
-    Result := EState.CLOSE_INTERFACE
-  else if not HasRequiredItems() then
-    Result := EState.WITHDRAW_MATERIAL
+  WriteLn('========================================');
+  WriteLn('HandleBank: Entering bank handler');
+  WriteLn('========================================');
+  
+  // Check inventory status for all items
+  hasBar := Inventory.ContainsItem(Self.Bar.Item);
+  barCount := Inventory.CountItem(Self.Bar.Item);
+  
+  hasPrimaryOre := Inventory.ContainsItem(Self.PrimaryOre.Item);
+  primaryOreCount := Inventory.CountItem(Self.PrimaryOre.Item);
+  
+  hasRunes := Inventory.ContainsItem(Self.Runes.Item);
+  runeCount := Inventory.CountItem(Self.Runes.Item);
+  
+  // Check secondary ore if applicable
+  if Self.SecondaryOre.Item <> '' then
+  begin
+    hasSecondaryOre := Inventory.ContainsItem(Self.SecondaryOre.Item);
+    secondaryOreCount := Inventory.CountItem(Self.SecondaryOre.Item);
+    WriteLn('  Secondary Ore (', Self.SecondaryOre.Item, '): ', hasSecondaryOre, ' (Count: ', secondaryOreCount, ')');
+  end
   else
+  begin
+    hasSecondaryOre := True; // Not needed for this bar type
+    secondaryOreCount := 0;
+    WriteLn('  Secondary Ore: Not required for this bar type');
+  end;
+  
+  // Display inventory status
+  WriteLn('Inventory Status:');
+  WriteLn('  Bar (', Self.Bar.Item, '): ', hasBar, ' (Count: ', barCount, ')');
+  WriteLn('  Primary Ore (', Self.PrimaryOre.Item, '): ', hasPrimaryOre, ' (Count: ', primaryOreCount, ')');
+  WriteLn('  Runes (', Self.Runes.Item, '): ', hasRunes, ' (Count: ', runeCount, ')');
+  
+  // Check bank status
+  bankIsEmpty := Self.BankEmpty;
+  hasAllRequired := Self.HasRequiredItems();
+  
+  WriteLn('Bank Status:');
+  WriteLn('  Bank is empty: ', bankIsEmpty);
+  WriteLn('  Has all required items: ', hasAllRequired);
+  
+  // Decision logic with detailed output
+  WriteLn('Decision Logic:');
+  
+  // Priority 1: Deposit bars if we have them
+  if hasBar then
+  begin
+    WriteLn('  -> Found ', barCount, ' bar(s) in inventory');
+    WriteLn('  -> Decision: DEPOSIT_PRODUCT');
+    Result := EState.DEPOSIT_PRODUCT;
+  end
+  // Priority 2: Check if bank is empty or we already have required items
+  else if bankIsEmpty then
+  begin
+    WriteLn('  -> Bank is empty, no materials to withdraw');
+    WriteLn('  -> Decision: CLOSE_INTERFACE');
     Result := EState.CLOSE_INTERFACE;
-    
-  ItemCount := Inventory.CountItem(PrimaryOre.Item);
+  end
+  else if hasAllRequired then
+  begin
+    WriteLn('  -> Already have all required items');
+    WriteLn('  -> Primary Ore: ', hasPrimaryOre);
+    WriteLn('  -> Secondary Ore: ', hasSecondaryOre);
+    WriteLn('  -> Runes: ', hasRunes);
+    WriteLn('  -> Decision: CLOSE_INTERFACE');
+    Result := EState.CLOSE_INTERFACE;
+  end
+  // Priority 3: Withdraw materials if we don't have everything
+  else if not hasAllRequired then
+  begin
+    WriteLn('  -> Missing required items:');
+    if not hasPrimaryOre then
+      WriteLn('     * Missing Primary Ore (', Self.PrimaryOre.Item, ')');
+    if not hasSecondaryOre and (Self.SecondaryOre.Item <> '') then
+      WriteLn('     * Missing Secondary Ore (', Self.SecondaryOre.Item, ')');
+    if not hasRunes then
+      WriteLn('     * Missing Runes (', Self.Runes.Item, ')');
+    WriteLn('  -> Decision: WITHDRAW_MATERIAL');
+    Result := EState.WITHDRAW_MATERIAL;
+  end
+  // Default fallback
+  else
+  begin
+    WriteLn('  -> No specific condition met (fallback)');
+    WriteLn('  -> Decision: CLOSE_INTERFACE');
+    Result := EState.CLOSE_INTERFACE;
+  end;
+  
+  // Update item count for tracking
+  ItemCount := primaryOreCount;
+  WriteLn('Updated ItemCount to: ', ItemCount);
+  WriteLn('========================================');
+  WriteLn('');
 end;
 
 {******************************************************************************
