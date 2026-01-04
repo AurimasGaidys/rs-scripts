@@ -1,0 +1,164 @@
+{******************************************************************************
+ * SuperHeater - Core Functionality Module
+ * 
+ * This file contains the main TSuperHeater record methods including
+ * initialization, item setup, and core logic.
+ *****************************************************************************}
+
+{******************************************************************************
+ * TSuperHeater.SetupItems
+ * 
+ * Configures all items (ores, bars, runes) based on the selected bar type.
+ * Handles different ore requirements for each bar type.
+ *****************************************************************************}
+procedure TSuperHeater.SetupItems();
+begin
+  Self.Spell := ERSSpell.SUPERHEAT_ITEM;
+  Runes := TRSBankItem.Setup(CastRune, -1);
+  ItemCount := -1;
+  
+  if USE_COALBAG then 
+    CoalBag := TRSBankItem.Setup('Coal bag', 1);
+
+  if CurrentTask = 'Bronze' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Tin ore', 13);
+    SecondaryOre := TRSBankItem.Setup('Copper ore', 13);
+    Bar := TRSBankItem.Setup('Bronze bar', SecondaryOre.Quantity);
+  end
+  else if CurrentTask = 'Iron' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Iron ore', 27);
+    SecondaryOre := TRSBankItem.Setup('', 0);  // No secondary ore
+    Bar := TRSBankItem.Setup('Iron bar', PrimaryOre.Quantity);
+  end
+  else if CurrentTask = 'Silver' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Silver ore', 27);
+    SecondaryOre := TRSBankItem.Setup('', 0);  // No secondary ore
+    Bar := TRSBankItem.Setup('Silver bar', PrimaryOre.Quantity);
+  end
+  else if CurrentTask = 'Steel' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Iron ore', GetOreQuantity(USE_COALBAG, 9, 17));
+    SecondaryOre := TRSBankItem.Setup('Coal', GetOreQuantity(USE_COALBAG, 18, -1));
+    Bar := TRSBankItem.Setup('Steel bar', SecondaryOre.Quantity);
+  end
+  else if CurrentTask = 'Gold' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Gold ore', 27);
+    SecondaryOre := TRSBankItem.Setup('', 0);  // No secondary ore
+    Bar := TRSBankItem.Setup('Gold bar', PrimaryOre.Quantity);
+  end
+  else if CurrentTask = 'Mithril' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Mithril ore', GetOreQuantity(USE_COALBAG, 5, 10));
+    SecondaryOre := TRSBankItem.Setup('Coal', GetOreQuantity(USE_COALBAG, 20, -1));
+    Bar := TRSBankItem.Setup('Mithril bar', SecondaryOre.Quantity);
+  end
+  else if CurrentTask = 'Adamantite' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Adamantite ore', GetOreQuantity(USE_COALBAG, 3, 7));
+    SecondaryOre := TRSBankItem.Setup('Coal', GetOreQuantity(USE_COALBAG, 18, -1));
+    Bar := TRSBankItem.Setup('Adamantite bar', SecondaryOre.Quantity);
+  end
+  else if CurrentTask = 'Runite' then
+  begin
+    PrimaryOre := TRSBankItem.Setup('Runite ore', GetOreQuantity(USE_COALBAG, 3, 5));
+    SecondaryOre := TRSBankItem.Setup('Coal', GetOreQuantity(USE_COALBAG, 24, -1));
+    Bar := TRSBankItem.Setup('Runite bar', SecondaryOre.Quantity);
+  end
+  else
+  begin
+    TerminateScript('Task not detected?');
+  end;
+end;
+
+{******************************************************************************
+ * TSuperHeater.Init
+ * 
+ * Initializes the script with all necessary settings and configurations.
+ * Sets up the game client, validates settings, and prepares for execution.
+ * 
+ * @param MaxActions: Maximum number of actions to perform
+ * @param MaxTime: Maximum time to run the script
+ *****************************************************************************}
+procedure TSuperHeater.Init(MaxActions: UInt32; MaxTime: UInt64); override;
+begin
+  inherited;
+  
+  Self.RSW.SetupNamedRegion();
+  Self.SetupItems();
+  
+  WLSettings.RemoteInput.Enabled    := True;
+  WLSettings.RemoteInput.HUDReport  := False;
+  
+  if MOUSEOVERRIDE <> 0 then
+    Mouse.Speed := MOUSEOVERRIDE;
+
+  // Ensure brightness is at maximum
+  if Options.GetBrightnessLevel < 100 then
+  begin
+    Options.SetMaxBrightness;
+    WriteLn('Current brightness level: ' + IntToStr(Options.GetBrightnessLevel));
+  end;
+
+  // Validate client mode is FIXED
+  if RSClient.DetectClientMode() <> ERSClientMode.FIXED then
+  begin
+    WriteLn('The client must be running in FIXED mode. Please change the mode and restart the script.');
+    TerminateScript();
+  end;
+  
+  // Remove cooking guild banks
+  RSObjects.BankWood3.Coordinates.Remove([7981, 2651], True);
+  RSObjects.BankWood3.Coordinates.Remove([7985, 2651], True);
+end;
+
+{******************************************************************************
+ * TSuperHeater.HasRequiredItems
+ * 
+ * Checks if the inventory contains all required items for superheating.
+ * 
+ * @return: True if all required items are present
+ *****************************************************************************}
+function TSuperHeater.HasRequiredItems(): Boolean;
+begin
+  Result := WaitUntil(Inventory.ContainsItem(self.Runes.Item), 500, 2000);
+
+  if Result then
+    Result := Inventory.ContainsItem(self.PrimaryOre.Item);
+
+  if Result and (self.SecondaryOre.Item <> '') then
+    Result := Inventory.ContainsItem(self.SecondaryOre.Item);
+end;
+
+{******************************************************************************
+ * TSuperHeater.SafeBankOpen
+ * 
+ * Safely opens the bank by deselecting any active spell first.
+ * 
+ * @return: True if bank opened successfully
+ *****************************************************************************}
+function TSuperHeater.SafeBankOpen(): Boolean;
+begin
+  Result := Magic.Deselect and Bank.Open;
+end;
+
+{******************************************************************************
+ * TSuperHeater.Terminate
+ * 
+ * Cleanup procedure when script ends. Withdraws noted bars before stopping.
+ * 
+ * @return: True if termination was successful
+ *****************************************************************************}
+function TSuperHeater.Terminate(): Boolean; override;
+begin
+  WriteLn('Withdrawing noted bars for final count');
+  Self.Bar.Noted := True;
+  
+  if inherited then
+    for 0 to 5 do
+      if Result := Self.Withdraw(Self.Bar) then
+        Break;
+end;

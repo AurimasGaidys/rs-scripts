@@ -1,0 +1,108 @@
+{******************************************************************************
+ * SuperHeater - State Machine Module
+ * 
+ * This file contains state management logic - determining what state we're
+ * in and what actions need to be taken.
+ *****************************************************************************}
+
+{******************************************************************************
+ * TSuperHeater.HandleActivity
+ * 
+ * Handles overall activity status including script completion and level ups.
+ * 
+ * @return: The appropriate state based on activity status
+ *****************************************************************************}
+function TSuperHeater.HandleActivity(): EState;
+begin
+  if WL.Activity.IsFinished() then
+    Result := EState.END_SCRIPT
+  else if Chat.LeveledUp() then
+  begin
+    Self.SuperHeating := False;
+    Result := EState.LEVEL_UP;
+  end;
+end;
+
+{******************************************************************************
+ * TSuperHeater.HandleBank
+ * 
+ * Determines the next action when the bank is open.
+ * Checks for bars to deposit, required items, and inventory status.
+ * 
+ * @return: The appropriate state for bank operations
+ *****************************************************************************}
+function TSuperHeater.HandleBank(): EState;
+begin
+  if Inventory.ContainsItem(Self.Bar.Item) then
+    Result := EState.DEPOSIT_PRODUCT
+  else if BankEmpty or HasRequiredItems() then
+    Result := EState.CLOSE_INTERFACE
+  else if not HasRequiredItems() then
+    Result := EState.WITHDRAW_MATERIAL
+  else
+    Result := EState.CLOSE_INTERFACE;
+    
+  ItemCount := Inventory.CountItem(PrimaryOre.Item);
+end;
+
+{******************************************************************************
+ * TSuperHeater.HandleCollects
+ * 
+ * Determines the next action when the collection box is open.
+ * 
+ * @return: The appropriate state for collection box operations
+ *****************************************************************************}
+function TSuperHeater.HandleCollects(): EState;
+begin
+  if Self.CollectEmpty or HasRequiredItems() then
+    Result := EState.CLOSE_INTERFACE
+  else
+    Result := EState.HANDLE_COLLECT;
+end;
+
+{******************************************************************************
+ * TSuperHeater.GetState
+ * 
+ * Main state machine logic. Determines the current state based on various
+ * conditions including interfaces, inventory, and activity status.
+ * 
+ * @return: The current state that needs to be processed
+ *****************************************************************************}
+function TSuperHeater.GetState(): EState;
+begin
+  // Handle critical activities first (completion, level ups)
+  if WL.Activity.IsFinished() or Chat.LeveledUp() then
+    Exit(HandleActivity());
+
+  // Check for consecutive spell casting failures
+  if (Self.SpellCastFailed >= CastAttemptReset) then
+  begin
+    WriteLn('Too many failed cast attempts (', Self.SpellCastFailed, '), returning to bank');
+    Self.SpellCastFailed := 0; // Reset the counter after handling
+    Exit(OPEN_BANK);
+  end;
+
+  // Handle different interfaces
+  if RSInterface.IsOpen() then
+  begin
+    Self.SuperHeating := False; // Reset the flag
+    
+    if Bank.IsOpen() then
+      Exit(HandleBank());
+
+    if CollectBox.IsOpen() then
+      Exit(HandleCollects());
+
+    Exit(EState.CLOSE_INTERFACE);
+  end;
+
+  // Check if there are no items left to process
+  if ItemCount <= 0 then
+  begin
+    WriteLn('No items remaining, opening bank');
+    Exit(EState.OPEN_BANK);
+  end;
+
+  // Default to casting spell if other conditions are not met
+  Exit(EState.CAST_SPELL);
+end;

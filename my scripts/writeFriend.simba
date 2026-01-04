@@ -13,3 +13,80 @@ function TRSFriends.Find(name: String): TRSFriend;
 
 
 WriteLn RSCacheParser.Brightness();
+
+
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+type
+  EAshStates =
+  (
+   OPEN_BANK,
+   CLOSE_BANK,
+   WITHDRAW_ASHES,
+   SPREAD_ASHES,
+   NO_ACTIVITY_OUT_OF_ITEMS
+  );
+
+  TAshes = record
+    Points: TPointArray;
+    Items: TRSItemArray;
+    Objects: TRSObjectArray;
+    Int: Int32;
+    BankItem: TRSBankItem;
+  end;
+procedure TAshes.Init;
+begin
+  Map.SetupChunk(Chunk([48,55,50,53], 0));
+
+  SetLength(self.Items,6);
+  self.Items[0]:='Vial ashes';
+  self.Items[1]:='Fiendish ahses';
+  self.Items[2]:='Malicious ashes';
+  self.Items[3]:='Abbysal ashes';
+  self.Items[4]:='Infernal ashes';
+
+  self.Int:= 0;//sets the integer for the type of ashes you load.
+
+  self.BankItem.Item:= self.Items[self.Int];
+  self.BankItem.Noted:= False;
+  self.BankItem.Quantity:= -1;
+
+  WriteLn self.BankItem;
+end;
+
+procedure TAshes.TakeItemsFromBank;
+begin
+  if bank.IsOpen(20,200) then
+  Bank.WithdrawItem(self.BankItem,True);
+end;
+
+var
+  Ashes:TAshes;
+begin
+  Ashes.Init;
+  Ashes.TakeItemsFromBank;
+end;
+
+{$I WaspLib/osr.simba}
+var b: TBox;
+begin
+  Magic.FindSpell(spell, b);
+  debug(b);
+end.
+
+
+// press specific location
+function TIncubate.PlantSeedsInPot:Boolean;
+var
+  seedItemSlot,potItemSlot,startingCount:Int32;
+begin
+  startingCount:= Inventory.Items.CountStack(self.Seeds[0]); //caches our staring seed count
+  Inventory.FindItem(self.Seeds[0],seedItemSlot); //Stores our seed slot to seedItemSlot for clicking
+  Inventory.FindItem(self.Pots[0],potItemSlot); // Stores our filled plant slot to potItemSlot for clicking
+
+  Inventory.ClickSlot(potItemSlot,''); //clicks our pot first
+  Wait(350,458);
+  Result:=Inventory.ClickSlot(seedItemSlot,'Use Filled plant pot -> '+self.Seeds[0]);//clicks our seeds to start planting
+  Wait(10,25);
+  WaitUntil((self._CountSeeds =(startingCount-25)),5000,50000);// This sleeps our bot. Compares starting seed cache count to running count with _CountSeeds.
+end; 

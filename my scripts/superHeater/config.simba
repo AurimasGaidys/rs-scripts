@@ -1,0 +1,27 @@
+{******************************************************************************
+ * SuperHeater - Configuration Module
+ * 
+ * This file contains all script configuration settings, constants, and
+ * script metadata.
+ *****************************************************************************}
+
+{$DEFINE SCRIPT_ID := '66d75db9-5f27-486c-9407-3b94ae676e9b'}
+{$DEFINE SCRIPT_REVISION := '8'}
+
+// Bar types supported by the script
+const
+  BAR_TYPE: TStringArray =
+    ['Bronze', 'Iron', 'Silver', 'Steel', 'Gold', 'Mithril', 'Adamantite', 'Runite'];
+
+// Global cast counter
+var 
+  castCount: Int32 = 0;
+
+//=============DEFAULT SETTINGS==============
+var
+  CurrentTask: string    = 'Iron';        // Select bar type
+  USE_COALBAG: Boolean   = False;         // For Steel, Mithril, Adamantite, Runite
+  USE_GUI: Boolean       = True;          // Should use Wasp GUI
+  MOUSEOVERRIDE: Int32   = 13;            // Mouse movement speed
+  CastAttemptReset: Integer = 3;          // How many cast fails before banking
+  CastRune: String       = 'Nature rune'; // If Bryophyta then change to 'Fire rune'

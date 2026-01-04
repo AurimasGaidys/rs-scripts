@@ -1,0 +1,81 @@
+{******************************************************************************
+ * SuperHeater - GUI Module
+ * 
+ * This file contains the graphical user interface configuration form
+ * that allows users to configure script settings before running.
+ *****************************************************************************}
+
+{******************************************************************************
+ * TSuperHeaterConfig.StartScript
+ * 
+ * Called when the user clicks the Start button.
+ * Captures user selections and applies them to global variables.
+ * 
+ * @param sender: The control that triggered this event
+ *****************************************************************************}
+procedure TSuperHeaterConfig.StartScript(sender: TObject); override;
+begin
+  CurrentTask := Self.BarSelector.getText();
+  USE_COALBAG := Self.CoalBagCheck.IsChecked();
+  inherited;
+end;
+
+{******************************************************************************
+ * TSuperHeaterConfig.Run
+ * 
+ * Creates and displays the configuration GUI with all necessary options.
+ * Sets up tabs, dropdowns, checkboxes, and instructions for the user.
+ *****************************************************************************}
+procedure TSuperHeaterConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('SuperHeater Config');
+  Self.Start.SetOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+  Self.CreateAccountManager(tab);
+
+  // Bar type selector dropdown
+  with Self.BarSelector do
+  begin
+    Create(tab);
+    SetCaption('Bar type:');
+    SetLeft(TControl.AdjustToDPI(50));
+    SetTop(TControl.AdjustToDPI(200));
+    SetStyle(csDropDownList);
+    AddItemArray(BAR_TYPE);
+    SetItemIndex(1); // default to Iron (index 1)
+  end;
+
+  // Coal bag checkbox
+  with Self.CoalBagCheck do
+  begin
+    Create(tab);
+    SetCaption('Use Coal bag');
+    SetLeft(Self.BarSelector.GetRight() + TControl.AdjustToDPI(25));
+    SetTop(Self.BarSelector.GetTop() + TControl.AdjustToDPI(20));
+    SetChecked(USE_COALBAG);
+    SetHint('Optional if using Steel, Mithril, Adamantite, Runite');
+  end;
+
+  // Instructions label
+  with Self.Instructions do
+  begin
+    Create(tab);
+    SetCaption('Instructions: Start with empty inventory and items visible in bank without scroll'
+    + LINEENDING + 'Optionally use coal bag if using Steel, Mithril, Adamantite, Runite');
+    SetLeft(Self.BarSelector.GetLeft() + TControl.AdjustToDPI(0));
+    SetTop(Self.BarSelector.GetBottom() + TControl.AdjustToDPI(20));
+  end;
+
+  // Standard WaspLib components
+  Self.CreateVersionPanel(tab);
+  Self.CreateAntibanManager();
+  Self.CreateBankSettings();
+  Self.CreateWaspLibSettings();
+  Self.CreateAPISettings();
+
+  inherited;
+end;

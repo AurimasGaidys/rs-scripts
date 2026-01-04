@@ -215,7 +215,7 @@ begin
 
     if not RSClient.IsLoggedIn then Login.LoginPlayer;
 
-    //RSAlchHandler.CastAlchemy(True, True);
+    RSAlchHandler.CastAlchemy(True, True);
 
     Magic.ClickSpell(ERSSpell.FALADOR_TELEPORT);
     Self.TotalActions += 1;

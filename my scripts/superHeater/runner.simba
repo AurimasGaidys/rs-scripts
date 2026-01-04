@@ -1,0 +1,67 @@
+{******************************************************************************
+ * SuperHeater - Main Runner Module
+ * 
+ * This file contains the main execution loop that runs the script.
+ * It coordinates all state changes and executes appropriate actions.
+ *****************************************************************************}
+
+{******************************************************************************
+ * TSuperHeater.Run
+ * 
+ * Main execution loop for the script. Initializes the script, then
+ * continuously checks state and executes appropriate actions until
+ * completion or stop condition is met.
+ * 
+ * @param MaxActions: Maximum number of actions to perform
+ * @param MaxTime: Maximum time to run (in milliseconds)
+ *****************************************************************************}
+procedure TSuperHeater.Run(MaxActions: Int32; MaxTime: Int64);
+begin
+  Self.Init(MaxActions, MaxTime);
+  WriteLn('SuperHeater script initialized and starting...');
+  
+  repeat
+    // Get current state
+    State := Self.GetState();
+    Self.SetAction(ToStr(State));
+    
+    // Execute action based on state
+    case State of
+      EState.OPEN_BANK: 
+        self.SafeBankOpen();
+        
+      EState.WITHDRAW_MATERIAL: 
+        Self.WithdrawMaterial();
+        
+      EState.DEPOSIT_PRODUCT: 
+        Self.Deposit();
+        
+      EState.OPEN_COLLECT: 
+        CollectBox.Open();
+        
+      EState.HANDLE_COLLECT: 
+        Self.CollectRequiredItems();
+        
+      EState.CLOSE_INTERFACE: 
+        RSInterface.Close(True);
+        
+      EState.LEVEL_UP: 
+        Chat.HandleLevelUp();
+        
+      EState.CAST_SPELL: 
+        if not Self.CastSpell() then 
+          Inc(Self.SpellCastFailed);
+          
+      EState.END_SCRIPT: 
+        Break;
+    end;
+    
+    // Perform antiban actions
+    Self.DoAntiban();
+    
+  until Self.ShouldStop();
+  
+  // Cleanup and termination
+  if not Self.Terminate() then
+    TerminateScript(Self.Name + ' didn''t terminate properly. Stopping execution.');
+end;

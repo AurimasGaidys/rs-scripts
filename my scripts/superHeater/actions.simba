@@ -1,0 +1,142 @@
+{******************************************************************************
+ * SuperHeater - Actions Module
+ * 
+ * This file contains all action methods for spell casting, banking,
+ * depositing, and withdrawing items.
+ *****************************************************************************}
+
+{******************************************************************************
+ * TSuperHeater.CastSpell
+ * 
+ * Casts the superheat spell on primary ore. Handles all the timing and
+ * verification of successful spell casting.
+ * 
+ * @return: True if spell was cast successfully and XP was gained
+ *****************************************************************************}
+function TSuperHeater.CastSpell(): Boolean;
+begin
+  Result := False; // Default result
+  
+  // Exit if no primary ore left (track casts to minimize inventory search)
+  if ItemCount <= 0 then 
+    Exit;
+
+  // Exit early if unable to cast the spell or open inventory
+  if not (Magic.ClickSpell(Self.Spell) and WaitUntil(Inventory.IsOpen, 300, 5000)) then 
+    Exit;
+
+  Inc(castCount);
+  WriteLn('Cast attempt #', castCount);
+
+  Wait(200, 500);
+
+  // Exit early if unable to click primary ore
+  if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
+    Exit;
+
+  // Check for XP gain and decrement ItemCount if successful
+  if WaitUntil(XPBar.EarnedXP(), 300, 5000) then
+  begin
+    Result := True;
+    Self.SuperHeating := True;
+    Self.SpellCastFailed := 0; // Reset the counter if successful
+    Dec(ItemCount); // Decrement ItemCount on successful XP gain
+    WriteLn('Successfully superheated item. Remaining: ', ItemCount);
+  end;
+
+  // Handle case when out of items
+  if ItemCount <= 0 then 
+    Self.SuperHeating := False;
+end;
+
+{******************************************************************************
+ * TSuperHeater.Deposit
+ * 
+ * Deposits bars and any random items from inventory.
+ * Updates total action count based on bars deposited.
+ * 
+ * @return: True if deposit was successful
+ *****************************************************************************}
+function TSuperHeater.Deposit(): Boolean;
+var
+  itemCount: Int32 := Inventory.CountItem(Bar.Item);
+  Exclude_Items: TRSItemArray := [Self.Runes.Item];
+begin
+  WriteLn('Depositing items to bank');
+  
+  // Deposit Bars
+  if Result := Bank.DepositItem(Bar, True) then
+  begin
+    if WaitUntil(Inventory.CountItem(Bar.Item) = 0, 500, 2000) then
+    begin
+      WriteLn('Successfully deposited ', itemCount, ' bars');
+      Self.TotalActions += itemCount;
+    end;
+  end;
+
+  // Deposit random items excluding the ones specified
+  if Inventory.ContainsRandomItems(Exclude_Items) then
+  begin
+    WriteLn('Depositing random items');
+    Bank.DepositRandomItems(Exclude_Items);
+  end;
+end;
+
+{******************************************************************************
+ * TSuperHeater.WithdrawMaterial
+ * 
+ * Withdraws all necessary materials (runes, primary ore, secondary ore)
+ * from the bank in the correct order.
+ *****************************************************************************}
+procedure TSuperHeater.WithdrawMaterial();
+begin
+  // Deposit if there is anything that shouldn't be in inventory
+  Self.Deposit;
+
+  // Ensure we have runes
+  if not Inventory.ContainsItem(Self.Runes.Item) then
+    Self.Withdraw(Self.Runes);
+
+  // Withdraw ores (secondary ore first if needed)
+  if SecondaryOre.Item <> '' then
+  begin
+    Self.Withdraw(Self.PrimaryOre);
+    Self.Withdraw(Self.SecondaryOre);
+  end
+  else
+  begin
+    Self.Withdraw(Self.PrimaryOre);
+  end;
+end;
+
+{******************************************************************************
+ * TSuperHeater.CollectRequiredItems
+ * 
+ * Collects all required items from the collection box.
+ * Handles primary ore, secondary ore, and runes.
+ *****************************************************************************}
+procedure TSuperHeater.CollectRequiredItems();
+begin
+  Self.HandleCollectBox([self.Runes.Item]);
+  Self.HandleCollectBox([self.PrimaryOre.Item]);
+
+  if self.SecondaryOre.Item <> '' then
+    Self.HandleCollectBox([self.SecondaryOre.Item]);
+end;
+
+{******************************************************************************
+ * TSuperHeater.CollectIfRequired
+ * 
+ * Opens and processes the collection box if it's available.
+ * Closes the box if empty or all items are collected.
+ *****************************************************************************}
+procedure TSuperHeater.CollectIfRequired();
+begin
+  if CollectBox.IsOpen() then
+  begin
+    if Self.CollectEmpty or HasRequiredItems() then
+      RSInterface.Close(True)
+    else
+      Self.CollectRequiredItems();
+  end;
+end;

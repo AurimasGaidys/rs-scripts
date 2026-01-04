@@ -1,0 +1,73 @@
+{******************************************************************************
+ * SuperHeater - Main Entry Point
+ * 
+ * OSRS Magic Superheat Item script - Automatically casts Superheat Item
+ * spell on various ores to create bars efficiently.
+ * 
+ * Author: Original script from WaspScripts community
+ * Architecture: Modular design for easy maintenance and extension
+ * 
+ * FEATURES:
+ * - Supports all bar types (Bronze, Iron, Silver, Steel, Gold, Mithril, 
+ *   Adamantite, Runite)
+ * - Optional coal bag support for higher tier bars
+ * - Full antiban integration
+ * - Automatic banking and collection box handling
+ * - GUI configuration interface
+ * 
+ * REQUIREMENTS:
+ * - SRL-T library
+ * - WaspLib library
+ * - OSRS client in FIXED mode
+ * - Level 43 Magic (Superheat Item spell)
+ * - Nature runes (or Fire runes for Bryophyta staff)
+ * 
+ * INSTRUCTIONS:
+ * 1. Start with empty inventory
+ * 2. Ensure items are visible in bank without scrolling
+ * 3. Configure bar type in GUI
+ * 4. Optional: Enable coal bag for Steel/Mithril/Adamantite/Runite
+ *****************************************************************************}
+
+{$DEFINE SCRIPT_ID := '66d75db9-5f27-486c-9407-3b94ae676e9b'}
+{$DEFINE SCRIPT_REVISION := '8'}
+{$I SRL-T/osr.simba}
+{$I WaspLib/osr.simba}
+
+// Set default account
+begin
+  Login.PlayerIndex := 0;
+end;
+
+//==============================================================================
+// IMPORT MODULES
+//==============================================================================
+
+{$I config.simba}      // Configuration and constants
+{$I types.simba}       // Type definitions and enums
+{$I helpers.simba}     // Helper functions and overrides
+{$I core.simba}        // Core initialization and setup
+{$I actions.simba}     // Action methods (casting, banking, etc.)
+{$I statemachine.simba} // State management logic
+{$I runner.simba}      // Main execution loop
+{$I gui.simba}         // GUI configuration interface
+
+//==============================================================================
+// SCRIPT EXECUTION
+//==============================================================================
+
+var
+  SuperHeater: TSuperHeater;
+  SuperHeaterConfig: TSuperHeaterConfig;
+
+begin
+  // Launch GUI if enabled
+  if USE_GUI then
+    SuperHeaterConfig.Run();
+    
+  // Enable remote input
+  RSClient.RemoteInput.EnableRealInput;
+  
+  // Run the script
+  SuperHeater.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
