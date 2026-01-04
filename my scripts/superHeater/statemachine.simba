@@ -53,8 +53,16 @@ end;
  * @return: The appropriate state for collection box operations
  *****************************************************************************}
 function TSuperHeater.HandleCollects(): EState;
+var
+  collectEmpty, hasItems: Boolean;
 begin
-  if Self.CollectEmpty or HasRequiredItems() then
+  collectEmpty := Self.CollectEmpty;
+  hasItems := HasRequiredItems();
+  
+  WriteLn('Self.CollectEmpty: ', collectEmpty);
+  WriteLn('HasRequiredItems(): ', hasItems);
+  
+  if collectEmpty or hasItems then
     Result := EState.CLOSE_INTERFACE
   else
     Result := EState.HANDLE_COLLECT;
