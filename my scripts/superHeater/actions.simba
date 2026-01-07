@@ -74,8 +74,8 @@ begin
   WriteLn('Depositing items to bank');
 
   // fast store
-  if not Bank.IsOpen() then
-    inventory.Open();
+  // if not Bank.IsOpen() then
+  //   inventory.Open();
 
   
   // Deposit Barsinventory
