@@ -31,6 +31,7 @@ type
     CoalBag: TRSBankItem;
     ItemCount: Integer;
     SpellCastFailed: Integer;
+    castCountfire: Integer;
   end;
 
 // GUI configuration record type

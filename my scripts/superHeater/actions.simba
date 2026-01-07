@@ -30,6 +30,15 @@ begin
 
   Wait(200, 500);
 
+  // Press inventory item 7 while castCountfire is less than 5
+  if Self.castCountfire < 5 then
+  begin
+    WriteLn('Pressing inventory item 7 (castCountfire: ', Self.castCountfire, ')');
+    Inventory.ClickSlot(7);
+    Inc(Self.castCountfire);
+    Wait(200, 500);
+  end;
+
   // Exit early if unable to click primary ore
   if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
     Exit;
@@ -63,8 +72,13 @@ var
   Exclude_Items: TRSItemArray := [Self.Runes.Item];
 begin
   WriteLn('Depositing items to bank');
+
+  // fast store
+  if not Bank.IsOpen() then
+    inventory.Open();
+
   
-  // Deposit Bars
+  // Deposit Barsinventory
   if Result := Bank.DepositItem(Bar, True) then
   begin
     if WaitUntil(Inventory.CountItem(Bar.Item) = 0, 500, 2000) then
