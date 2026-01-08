@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHEMY_HANDLER_INCLUDED}
 {$DEFINE WL_ALCHEMY_HANDLER_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -285,3 +287,5 @@ begin
   inherited;
   RSAlchHandler.Setup();
 end;
+
+{$ENDIF}

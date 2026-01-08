@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_TYPES_INCLUDED}
 {$DEFINE WL_ALCHER_TYPES_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -46,3 +48,5 @@ type
     Disabled: Boolean;
     Config: TConfigJSON;
   end;
+
+{$ENDIF}

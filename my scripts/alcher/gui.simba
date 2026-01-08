@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_GUI_INCLUDED}
 {$DEFINE WL_ALCHER_GUI_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -427,3 +429,5 @@ begin
     setOnClick(@Self._OnAlchListClear);
   end;
 end;
+
+{$ENDIF}

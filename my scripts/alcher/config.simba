@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_CONFIG_INCLUDED}
 {$DEFINE WL_ALCHER_CONFIG_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -143,3 +145,5 @@ begin
 
   Self.LoadItems();
 end;
+
+{$ENDIF}
