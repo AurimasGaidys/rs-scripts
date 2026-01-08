@@ -1,0 +1,52 @@
+{$DEFINE WL_ALCHER_CORE_INCLUDED}
+{$IFNDEF WL_OSR}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+{$I types.simba}
+{$I config.simba}
+{$I alchemyhandler.simba}
+{$I helpers.simba}
+{$I actions.simba}
+{$I statemachine.simba}
+
+(*
+  Core.simba
+  ==========
+  Contains the main execution loop for the Alcher bot
+*)
+
+// Main execution loop
+procedure TAlcher.Run(maxActions: UInt32; maxTime: UInt64);
+begin
+  Self.Init(maxActions, maxTime);
+
+  repeat
+    State := Self.GetState();
+    Self.SetAction(ToStr(State));
+
+    case Self.State of
+      EAlcherState.WALK_ALCH: InGe := Map.Walker.WebWalk(Self.GEObj.Coordinates, 10, 0.2);
+
+      EAlcherState.OPEN_BANK: Banks.WalkOpen();
+      EAlcherState.WITHDRAW_NATS: Self.Withdraw(Self.NatureRune);
+      EAlcherState.WITHDRAW_MONEY: Self.Withdraw(Self.Coins);
+
+      EAlcherState.OPEN_COLLECT: CollectBoxes.WalkOpen();
+      EAlcherState.HANDLE_COLLECT: Self.HandleCollectBox(['Coins', 'Nature rune']);
+      EAlcherState.CLOSE_INTERFACE: RSInterface.Close();
+
+      EAlcherState.WAIT_ALCH: Wait(100);
+      EAlcherState.CAST_ALCHEMY: Self.CastAlchemy();
+
+      EAlcherState.CLOSE_CONTEXT: ChooseOption.Close();
+
+      EAlcherState.END_SCRIPT: Break;
+    end;
+
+    Self.DoAntiban();
+  until Self.ShouldStop();
+
+  if not Self.Terminate() then
+    Self.Fatal('Didn''t terminate properly. Stopping execution.');
+end;

@@ -1,0 +1,48 @@
+{$DEFINE WL_ALCHER_TYPES_INCLUDED}
+{$IFNDEF WL_OSR}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+(*
+  Types.simba
+  ===========
+  Contains all type definitions for the Alcher bot
+*)
+
+type
+  // State enumeration for the alcher state machine
+  EAlcherState = (
+    OPEN_BANK, 
+    WITHDRAW_NATS, 
+    WITHDRAW_MONEY,
+    OPEN_COLLECT, 
+    HANDLE_COLLECT,
+    CLOSE_INTERFACE,
+    CAST_ALCHEMY, 
+    WAIT_ALCH, 
+    WALK_ALCH,
+    CLOSE_CONTEXT,
+    SWITCH_ITEM,
+    OUT_OF_ITEMS, 
+    OUT_OF_NATURES, 
+    END_SCRIPT
+  );
+
+  // Main Alcher bot record
+  TAlcher = record(TBaseBankScript)
+    State: EAlcherState;
+    AlchItem: TRSItem;
+    NatureRune, Coins: TRSBankItem;
+    InGE: Boolean;
+    GEObj: TRSObjectV2;
+  end;
+
+  // Alchemy Handler - manages item selection and casting
+  TRSAlchHandler = record(TSRLBaseRecord)
+    Item: TRSItem;
+    ItemArray: TRSItemArray;
+    Timer: TCountDown;
+    SlotUnder, LowProfit, HighProfit, TotalProfit: Int32;
+    Disabled: Boolean;
+    Config: TConfigJSON;
+  end;

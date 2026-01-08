@@ -1,0 +1,62 @@
+{$DEFINE WL_ALCHER_STATEMACHINE_INCLUDED}
+{$IFNDEF WL_OSR}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+{$I types.simba}
+{$I config.simba}
+{$I alchemyhandler.simba}
+
+(*
+  StateMachine.simba
+  ==================
+  Contains state machine logic for determining bot states
+*)
+
+// Determine the current state based on game conditions
+function TAlcher.GetState(): EAlcherState;
+begin
+  if WL.Activity.IsFinished() then
+    Exit(EAlcherState.END_SCRIPT);
+
+  if RSAlchHandler.Disabled then
+    Exit(EAlcherState.OUT_OF_ITEMS);
+
+  if ChooseOption.IsOpen() then
+    Exit(EAlcherState.CLOSE_CONTEXT);
+
+  if RSInterface.IsOpen() then
+  begin
+    if Bank.IsOpen() then
+    begin
+      if not Inventory.ContainsItem('Nature rune') then
+        Exit(EAlcherState.WITHDRAW_NATS);
+
+      if not Inventory.ContainsItem('Coins') then
+        Exit(EAlcherState.WITHDRAW_MONEY);
+
+      Exit(EAlcherState.CLOSE_INTERFACE);
+    end;
+
+    if CollectBox.IsOpen() then
+    begin
+      if Self.CollectEmpty then
+        Exit(EAlcherState.CLOSE_INTERFACE);
+      Exit(EAlcherState.HANDLE_COLLECT);
+    end;
+
+    Exit(EAlcherState.CLOSE_INTERFACE);
+  end;
+
+  if WalkGE and not Self.InGE then
+  begin
+    Self.InGE := Map.InRange(Self.GEObj.Coordinates, 30);
+    if not Self.InGE then
+      Exit(EAlcherState.WALK_ALCH);
+  end;
+
+  if RSAlchHandler.Timer.TimeRemaining() >= Random(300, 1800) then
+    Exit(EAlcherState.WAIT_ALCH);
+
+  Result := EAlcherState.CAST_ALCHEMY;
+end;

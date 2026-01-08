@@ -1,0 +1,127 @@
+{$DEFINE SCRIPT_ID := 'f6fc217a-3b03-44e1-8fa7-662dfb48f6d7'}
+{$DEFINE SCRIPT_REVISION := '41'}
+{$IFNDEF SCRIPT_CHAIN}
+  {$DEFINE SCRIPT_GUI}
+  {$I SRL-T/osr.simba}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+{$I types.simba}
+{$I config.simba}
+{$I alchemyhandler.simba}
+{$I helpers.simba}
+{$I actions.simba}
+{$I statemachine.simba}
+{$I core.simba}
+{$I gui.simba}
+
+(*
+  Alcher.simba
+  ============
+  Main runner file for the Alcher bot
+  
+  Modular structure:
+  - types.simba: All type definitions
+  - config.simba: Configuration management
+  - alchemyhandler.simba: Core alchemy handler logic
+  - helpers.simba: Helper functions and initialization
+  - actions.simba: Bot actions
+  - statemachine.simba: State determination logic
+  - core.simba: Main execution loop
+  - gui.simba: GUI components
+*)
+
+var
+  AlchSpell: ERSSpell := ERSSpell.HIGH_LEVEL_ALCHEMY;
+  LossProtection: Boolean := True;
+  WalkGE: Boolean := True;
+
+var
+  Alcher: TAlcher;
+
+{$IFNDEF SCRIPT_CHAIN}
+{$IFDEF SCRIPT_GUI}
+type
+  TAlcherConfig = record(TScriptForm)
+    AlchSelector: TLabeledCombobox;
+    IgnoreProfit: TLabeledCheckbox;
+    WalkGECheckbox: TLabeledCheckbox;
+    CustomItemSelector: TLabeledEdit;
+  end;
+
+procedure TAlcherConfig.StartScript(sender: TObject); override;
+begin
+  case Self.AlchSelector.GetItemIndex() of
+    0: AlchSpell := ERSSpell.HIGH_LEVEL_ALCHEMY;
+    1: AlchSpell := ERSSpell.LOW_LEVEL_ALCHEMY;
+  end;
+
+  LossProtection := Self.IgnoreProfit.IsChecked();
+  WalkGE := Self.WalkGECheckbox.IsChecked();
+
+  inherited;
+end;
+
+procedure TAlcherConfig.Run(); override;
+var
+  tab: TTabSheet;
+begin
+  Self.Setup('Wasp Alcher');
+  Self.Start.setOnClick(@Self.StartScript);
+
+  Self.AddTab('Script Settings');
+  tab := Self.Tabs[High(Self.Tabs)];
+
+  Self.CreateAccountManager(tab);
+
+  with Self.AlchSelector do
+  begin
+    Create(tab);
+    SetCaption('Alchemy spell:');
+    SetLeft(TControl.AdjustToDPI(20));
+    SetTop(TControl.AdjustToDPI(200));
+    Combobox.setStyle(csDropDownList);
+    Combobox.getItems.Add('High alchemy');
+    Combobox.getItems.Add('Low alchemy');
+    Combobox.setItemIndex(0);
+  end;
+
+  with Self.IgnoreProfit do
+  begin
+    Create(tab);
+    SetCaption('Prevent loss');
+    SetLeft(Self.AlchSelector.GetRight() + TControl.AdjustToDPI(20));
+    SetTop(Self.AlchSelector.GetTop() + TControl.AdjustToDPI(17));
+    SetChecked(LossProtection);
+  end;
+
+  with Self.WalkGECheckbox do
+  begin
+    Create(tab);
+    SetCaption('Walk to GE (Varrock only)');
+    SetLeft(Self.IgnoreProfit.GetRight() + TControl.AdjustToDPI(20));
+    SetTop(Self.IgnoreProfit.GetTop());
+    SetChecked(WalkGE);
+  end;
+
+  Self.CreateAlchemyPanel();
+  Self.CreateAntibanManager();
+  Self.CreateWaspLibSettings();
+  Self.CreateAPISettings();
+
+  inherited;
+end;
+
+var
+  AlcherConfig: TAlcherConfig;
+{$ENDIF}
+{$ENDIF}
+
+{$IFNDEF SCRIPT_CHAIN}
+begin
+  {$IFDEF SCRIPT_GUI}
+  AlcherConfig.Run();
+  {$ENDIF}
+  Alcher.Run(WLSettings.MaxActions, WLSettings.MaxTime);
+end.
+{$ENDIF}

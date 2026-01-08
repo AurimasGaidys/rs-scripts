@@ -1,0 +1,41 @@
+{$DEFINE WL_ALCHER_HELPERS_INCLUDED}
+{$IFNDEF WL_OSR}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+{$I types.simba}
+
+(*
+  Helpers.simba
+  =============
+  Contains helper functions and setup methods for the Alcher bot
+*)
+
+// Setup antiban
+procedure TAntiban.Setup(); override;
+begin
+  Self.Skills := [ERSSkill.MAGIC, ERSSkill.TOTAL];
+  Self.MinZoom := 10;
+  Self.MaxZoom := 90;
+
+  inherited;
+end;
+
+// Initialize the alcher bot
+procedure TAlcher.Init(maxActions: UInt32; maxTime: UInt64); override;
+begin
+  inherited;
+
+  if WalkGE then
+  begin
+    Map.SetupChunk(ERSChunk.VARROCK);
+    Objects.Setup(Map.Objects(), @Map.Walker);
+    Self.GEObj := Objects.Get('Grand Exchange booth');
+  end;
+
+  if not Magic.IsSpellBook(ERSSpellBook.STANDARD) then
+    Self.Fatal('Not on Standard Spell Book');
+
+  Self.NatureRune := TRSBankItem.Setup('Nature rune', Bank.QUANTITY_ALL, False);
+  Self.Coins := TRSBankItem.Setup('Coins', Bank.QUANTITY_ALL, False);
+end;

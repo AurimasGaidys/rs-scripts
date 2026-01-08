@@ -1,0 +1,61 @@
+{$DEFINE WL_ALCHER_ACTIONS_INCLUDED}
+{$IFNDEF WL_OSR}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+{$I types.simba}
+{$I config.simba}
+{$I alchemyhandler.simba}
+
+(*
+  Actions.simba
+  =============
+  Contains all action methods for the Alcher bot
+*)
+
+// Handle alchemy warning dialogs
+function TAlcher.HandleWarning(): Boolean;
+begin
+  if Chat.HasContinue then
+    Chat.ClickContinue();
+  Chat.ClickOption('Cancel the', False);
+
+  if not Magic.Open then
+    Exit;
+
+  if Magic.ClickSpell(AlchSpell) and ChooseOption.IsOpen() then
+    ChooseOption.Select('Warnings');
+
+  WaitUntil(Chat.HasContinue(), 50, 2000);
+  Chat.ClickContinue();
+  WaitUntil(Chat.ClickOption('Set value', False), 50, 3000);
+  Wait(2000);
+  Result := Chat.AnswerQuery('Set value threshold for', '50000', 1000);
+  WaitUntil(Chat.HasContinue, 50, 2000);
+  Chat.ClickContinue();
+  WaitUntil(Chat.ClickOption('Cancel', False), 50, 3000);
+  Wait(2000);
+end;
+
+// Cast alchemy spell with error handling
+function TAlcher.CastAlchemy(attempts: Int32 = 0): Boolean;
+begin
+  Result := RSAlchHandler.CastAlchemy(AlchSpell = ERSSpell.HIGH_LEVEL_ALCHEMY, True);
+
+  if Chat.HasContinue() then
+    Self.HandleWarning();
+
+  if attempts > 5 then
+    TerminateScript('Can''t cast alchemy for some reason.');
+  if not Result and RSClient.IsLoggedIn() then
+    Self.CastAlchemy(Inc(attempts));
+
+  if Result then
+    Self.TotalActions += 1;
+end;
+
+// Terminate script
+function TAlcher.Terminate(): Boolean; override;
+begin
+  Result := True;
+end;

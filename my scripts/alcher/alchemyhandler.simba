@@ -1,0 +1,287 @@
+{$DEFINE WL_ALCHEMY_HANDLER_INCLUDED}
+{$IFNDEF WL_OSR}
+  {$I WaspLib/osr.simba}
+{$ENDIF}
+
+{$I types.simba}
+{$I config.simba}
+
+(*
+  AlchemyHandler.simba
+  ====================
+  Contains the core alchemy handler logic for item selection and spell casting
+*)
+
+// Get the item to alch from inventory
+function TRSAlchHandler.GetAlchItem(): TRSItem;
+var
+  match: TRSItemFinderMatch;
+  itemStr: String;
+begin
+  if not Inventory.Open() and not Inventory.SetSelectedSlot(-1) then
+    Exit;
+
+  if not ItemFinder.Find(Self.ItemArray, Inventory.GetSlotBoxes(), match) then
+  begin
+    Self.DebugLn('No items in the alch list were found!');
+    Self.Disabled := True;
+    Exit;
+  end;
+
+  Result := match.Item;
+  itemStr := Result;
+
+  Self.DebugLn('Found item: ' + itemStr);
+
+  itemStr := itemStr.After('noted ');
+  Self.LowProfit  := ItemData.GetLowAlchProfit(itemStr);
+  Self.HighProfit := ItemData.GetHighAlchProfit(itemStr);
+end;
+
+// Add profit to total
+procedure TRSAlchHandler.AddProfit(hi: Boolean = True);
+begin
+  if hi then
+    Self.TotalProfit += Self.HighProfit
+  else
+    Self.TotalProfit += Self.LowProfit;
+end;
+
+// Click an empty inventory slot
+function TRSAlchHandler.ClickEmptySlot(slot: Int32 = -1): Boolean;
+var
+  slots: TIntegerArray;
+begin
+  slots := Inventory.GetEmptySlots();
+  Result := slots <> [];
+
+  if Result then
+  begin
+    if slot = -1 then
+      slot := Inventory.Items.PointToSlot(Mouse.Position());
+
+    if slot = -1 then
+      Inventory.Items.MouseRandomSlot(slots)
+    else
+    begin
+      if (slots.Find(slot) = -1) or Antiban.BioDice(50) then
+        slot := Inventory.RandomSlotNearby(slot, slots);
+      Inventory.MouseSlot(slot);
+    end;
+    Mouse.Click(MOUSE_LEFT);
+  end;
+end;
+
+// Disable the alchemy cast
+function TRSAlchHandler.DisableCast(): Boolean;
+var
+  i, attempt: Int32;
+begin
+  if Inventory.Count() < 28 then
+    i := SRL.TruncatedGauss(0, 5)
+  else
+    i := SRL.TruncatedGauss(3, 5);
+
+  repeat
+    if Inc(attempt) > 10 then
+      Self.Fatal('Cannot disable the alchemy spell!');
+
+    case i of
+      0..2: Self.ClickEmptySlot();
+      3: Mouse.Click(MainScreen.Bounds, MOUSE_LEFT);
+      4: Mouse.Click(Chat.Bounds, MOUSE_LEFT);
+      5: ChooseOption.Select('Cancel');
+    end;
+  until not MainScreen.IsUpText('Alchemy -');
+  Result := True;
+end;
+
+// Select the alchemy spell
+function TRSAlchHandler.SelectSpell(hi: Boolean = True): Boolean;
+var
+  attempt: Int32;
+  spellStr: String;
+  spell: ERSSpell;
+begin
+  if hi then
+  begin
+    spell := ERSSpell.HIGH_LEVEL_ALCHEMY;
+    spellStr := 'h Level Alchemy -';
+  end
+  else
+  begin
+    spell := ERSSpell.LOW_LEVEL_ALCHEMY;
+    spellStr := 'w Level Alchemy -';
+  end;
+
+  repeat
+    if not Magic.IsSelected(spell) or
+       not GameTabs.FKeyOpen(ERSGameTab.INVENTORY)
+    then
+      Magic.CastSpell(spell);
+
+    Result := MainScreen.IsUpText(spellStr) or Inventory.IsOpen();
+  until Result or (Inc(attempt) > 3);
+
+  Self.Disabled := not Result;
+end;
+
+// Select the item to alch
+function TRSAlchHandler.SelectItem(hi: Boolean = True; waitTimer: Boolean = False): Boolean;
+var
+  attempt, slot, spellSlot: Int32;
+  box: TBox;
+  slots: TIntegerArray;
+begin
+  if hi then
+    Self.Timer.Length := 5 * 600
+  else
+    Self.Timer.Length := 3 * 600;
+
+  spellSlot := Self.SlotUnder;
+
+  for attempt := 0 to 2 do
+  begin
+    if Self.Item.IsNull() then
+      Self.Item := Self.GetAlchItem();
+
+    if Self.Item.IsNull() then
+      Exit;
+
+    if Inventory.FindItem(Self.Item, slot) then
+    begin
+      if (slot <> spellSlot) and (Inventory.Items.CountStack(slot) > 0) then
+      begin
+        Self.DisableCast();
+        if Inventory.Items.Move(slot, spellSlot) then
+          Exit;
+        Break;
+      end;
+
+      if SRL.Dice(99.5) then
+      begin
+        if not Inventory.MouseSlot(slot) and not MainScreen.IsUpText('>') then
+          Exit;
+
+        if not waitTimer then
+        begin
+          if not Self.Timer.IsFinished() and (Self.Timer.Timeout > 0) then
+            Exit;
+        end else
+          WaitUntil(Self.Timer.IsFinished(), 50, 3100);
+
+        Mouse.Click(MOUSE_LEFT);
+
+        if not WaitUntil(XPBar.EarnedXP() or Magic.IsOpen(), 300, 3000) then
+          Exit;
+
+        Self.Timer.Restart();
+        Self.AddProfit(hi);
+        Exit(True);
+      end;
+
+      slots := Inventory.GetEmptySlots();
+      if slots <> [] then
+      begin
+        slot := Inventory.RandomSlotNearby(slot, slots);
+        Inventory.ClickSlot(slot, '>');
+      end;
+      Exit;
+    end
+    else if ItemData.GetDefinitionBoolean(Self.Item, 'equipable') then
+    begin
+      Self.DisableCast();
+      if Equipment.FindItem(Self.Item, box) then
+      begin
+        Mouse.Click(box, MOUSE_LEFT);
+        Exit;
+      end;
+    end;
+
+    Self.Item := '';
+  end;
+end;
+
+// Main alchemy casting function
+function TRSAlchHandler.CastAlchemy(hi: Boolean = True; waitTimer: Boolean = False): Boolean;
+var
+  attempt: Int32;
+begin
+  XPBar.EarnedXP(); //Update cached XP.
+
+  repeat
+    if not Self.SelectSpell(hi) then
+      Exit;
+    Result := Self.SelectItem(hi, waitTimer);
+    TRSWalkerObject.RedClicked := False; //Integration with other wasplib components.
+  until Result or (Inc(attempt) > 2);
+end;
+
+// Override Magic.FindSpell to track slot under spell
+function TRSMagic.FindSpell(spell: ERSSpell; out box: TBox; attempts: Int32 = 2): Boolean; override;
+var
+  slots: TBoxArray;
+  i: Int32;
+begin
+  Result := inherited(spell, box, attempts);
+
+  if not Result then
+    Exit;
+
+  if (spell <> ERSSpell.LOW_LEVEL_ALCHEMY) and
+     (spell <> ERSSpell.HIGH_LEVEL_ALCHEMY) then
+    Exit;
+
+  slots := Inventory.GetSlotBoxes();
+  for i := 0 to High(slots) do
+    if box.Overlap(slots[i]) then
+    begin
+      RSAlchHandler.SlotUnder := i;
+      Exit;
+    end;
+end;
+
+// Override Magic.MouseSpell for better alchemy handling
+function TRSMagic.MouseSpell(spell: ERSSpell): Boolean; override;
+var
+  box: TBox;
+  upText: String;
+begin
+  if (Self.SpellCache[spell].UpText <> '') and
+     Self.SpellCache[spell].Box.Contains(Mouse.Position()) then
+  begin
+    upText := MainScreen.GetUpText().After('Cast').Before('/').Strip();
+
+    if (upText = Self.SpellCache[spell].UpText) then
+      Exit(True);
+    if upText.Contains('>') then
+    begin
+      ChooseOption.Select('Cancel');
+      Exit(Self.MouseSpell(spell));
+    end;
+  end;
+
+  Result := Self.Open() and Self.FindSpell(spell, box);
+
+  if Result then
+  begin
+    Mouse.Move(box);
+
+    if Self.SpellCache[spell].UpText = '' then
+    begin
+      upText := MainScreen.GetUpText().After('Cast').Before('/').Strip();
+      Self.SpellCache[spell].UpText := upText;
+    end;
+  end;
+end;
+
+// Global handler instance
+var
+  RSAlchHandler: TRSAlchHandler;
+
+// Setup handler on SRL initialization
+procedure TSRL.Setup(); override;
+begin
+  inherited;
+  RSAlchHandler.Setup();
+end;
