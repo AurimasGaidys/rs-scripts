@@ -216,7 +216,7 @@ begin
 
     RSAlchHandler.CastAlchemy(True, True);
 
-    Magic.ClickSpell(ERSSpell.FALADOR_TELEPORT);
+    //Magic.ClickSpell(ERSSpell.FALADOR_TELEPORT);
     //Wait(1900,2000);
     RSAlchHandler.CastAlchemy(True, True);
     WaitUntil(XPBar.EarnedXP(True), 50, 2000);
