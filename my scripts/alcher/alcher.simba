@@ -1,5 +1,3 @@
-// Unknown declaration "WalkGE" at line 51, column 6 in file "C:\Users\linas\Desktop\Aurimo\rs-scripts\my scripts\alcher\statemachine.simba"
-// Unknown declaration "AlchSpell" at line 26, column 23 in file "C:\Users\linas\Desktop\Aurimo\rs-scripts\my scripts\alcher\actions.simba"
 {$DEFINE SCRIPT_ID := 'f6fc217a-3b03-44e1-8fa7-662dfb48f6d7'}
 {$DEFINE SCRIPT_REVISION := '41'}
 {$IFNDEF SCRIPT_CHAIN}
@@ -7,14 +5,6 @@
   {$I SRL-T/osr.simba}
   {$I WaspLib/osr.simba}
 {$ENDIF}
-
-{$I types.simba}
-{$I config.simba}
-{$I helpers.simba}
-{$I actions.simba}
-{$I statemachine.simba}
-{$I core.simba}
-{$I gui.simba}
 
 (*
   Alcher.simba
@@ -39,6 +29,14 @@ var
 
 var
   Alcher: TAlcher;
+
+{$I types.simba}
+{$I config.simba}
+{$I helpers.simba}
+{$I actions.simba}
+{$I statemachine.simba}
+{$I core.simba}
+{$I gui.simba}
 
 {$IFNDEF SCRIPT_CHAIN}
 {$IFDEF SCRIPT_GUI}
