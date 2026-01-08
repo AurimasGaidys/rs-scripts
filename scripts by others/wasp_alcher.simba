@@ -9,7 +9,7 @@
 
 var
   AlchSpell: ERSSpell := ERSSpell.HIGH_LEVEL_ALCHEMY;
-  LossProtection: Boolean := True;
+  LossProtection: Boolean := False;
   WalkGE: Boolean := True;
 
 type
@@ -63,6 +63,7 @@ end;
 
 function TAlcher.HandleWarning(): Boolean;
 begin
+  WriteLn('++');
   if Chat.HasContinue then
     Chat.ClickContinue();
   Chat.ClickOption('Cancel the', False);
@@ -74,9 +75,12 @@ begin
     ChooseOption.Select('Warnings');
 
   WaitUntil(Chat.HasContinue(), 50, 2000);
+  WriteLn('q');
   Chat.ClickContinue();
+  WriteLn('w');
   WaitUntil(Chat.ClickOption('Set value', False), 50, 3000);
-  Wait(2000);
+   WriteLn('w');
+  Chat.ClickContinue();
   Result := Chat.AnswerQuery('Set value threshold for', '50000', 1000);
   WaitUntil(Chat.HasContinue, 50, 2000);
   Chat.ClickContinue();
@@ -90,12 +94,12 @@ begin
 
   if Chat.HasContinue() then
     Self.HandleWarning();
-
+          WriteLn('w');
   if attempts > 5 then
     TerminateScript('Can''t cast alchemy for some reason.');
   if not Result and RSClient.IsLoggedIn() then
     Self.CastAlchemy(Inc(attempts));
-
+     WriteLn('we');
   if Result then
     Self.TotalActions += 1;
 end;
