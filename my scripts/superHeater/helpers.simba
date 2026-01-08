@@ -37,28 +37,7 @@ end;
 function Inventory.ClickItem(item: TRSItem; option: String = ''): Boolean; override;
 var
   upText: String;
-  slots: TIntegerArray;
-  slotIndex: Int32;
 begin
-  // Find all slots containing the item
-  // slots := Inventory.FindItem(item);
-  
-  // if Length(slots) = 0 then
-  //   Exit(False);
-  
-  // // Click LAST item for first 5 casts, then click FIRST item
-  // if castCount <= 5 then
-  // begin
-  //   slotIndex := slots[High(slots)]; // Last slot
-  //   WriteLn('Clicking LAST item (cast #', castCount, ')');
-  // end
-  // else
-  // begin
-  //   slotIndex := slots[0]; // First slot
-  // end;
-  
-  // // Mouse to the selected item slot
-  // if Inventory.MouseSlot(slotIndex) then
   if Inventory.MouseItem(item) then
   begin
     upText := MainScreen.GetUpText();
