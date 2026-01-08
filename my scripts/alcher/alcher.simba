@@ -12,6 +12,7 @@
   Main runner file for the Alcher bot
   
   Modular structure:
+  - globals.simba: Global variables
   - types.simba: All type definitions
   - config.simba: Configuration management
   - alchemyhandler.simba: Core alchemy handler logic
@@ -22,14 +23,7 @@
   - gui.simba: GUI components
 *)
 
-var
-  AlchSpell: ERSSpell := ERSSpell.HIGH_LEVEL_ALCHEMY;
-  LossProtection: Boolean := True;
-  WalkGE: Boolean := True;
-
-var
-  Alcher: TAlcher;
-
+{$I globals.simba}
 {$I types.simba}
 {$I config.simba}
 {$I helpers.simba}
@@ -37,6 +31,9 @@ var
 {$I statemachine.simba}
 {$I core.simba}
 {$I gui.simba}
+
+var
+  Alcher: TAlcher;
 
 {$IFNDEF SCRIPT_CHAIN}
 {$IFDEF SCRIPT_GUI}

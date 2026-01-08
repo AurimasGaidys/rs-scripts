@@ -1,0 +1,15 @@
+{$IFNDEF WL_ALCHER_GLOBALS_INCLUDED}
+{$DEFINE WL_ALCHER_GLOBALS_INCLUDED}
+
+(*
+  Globals.simba
+  =============
+  Contains global variables used across the Alcher bot
+*)
+
+var
+  AlchSpell: ERSSpell := ERSSpell.HIGH_LEVEL_ALCHEMY;
+  LossProtection: Boolean := True;
+  WalkGE: Boolean := True;
+
+{$ENDIF}

@@ -3,6 +3,7 @@
   {$I WaspLib/osr.simba}
 {$ENDIF}
 
+{$I globals.simba}
 {$I types.simba}
 {$I config.simba}
 {$I alchemyhandler.simba}
