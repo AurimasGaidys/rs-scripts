@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_ACTIONS_INCLUDED}
 {$DEFINE WL_ALCHER_ACTIONS_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -60,3 +62,5 @@ function TAlcher.Terminate(): Boolean; override;
 begin
   Result := True;
 end;
+
+{$ENDIF}
