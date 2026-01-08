@@ -15,7 +15,7 @@
  *****************************************************************************}
 function TSuperHeater.CastSpell(): Boolean;
 begin
-  Result := False; // Default result
+    Result := False; // Default result
   // Exit if no primary ore left (track casts to minimize inventory search)
   if ItemCount <= 0 then Exit;
 
@@ -24,37 +24,6 @@ begin
 
   Inc(castCount);
   WriteLn('The ', castCount);
-
-  Wait(200, 500);
-
-  // Exit early if unable to click primary ore
-  if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then Exit;
-
-  // Check for XP gain and decrement ItemCount if successful
-  if WaitUntil(XPBar.EarnedXP(), 300, 5000) then
-  begin
-    Result := True;
-    Self.SuperHeating := True;
-    Self.SpellCastFailed := 0; // Reset the counter if succesful
-    Dec(ItemCount); // Decrement ItemCount on successful XP gain
-  end;
-
-  // Handle case when out of items
-  if ItemCount <= 0 then Self.SuperHeating := False;
-  end;
-
-    Exit;
-
-  // Exit if no primary ore left (track casts to minimize inventory search)
-  if ItemCount <= 0 then 
-    Exit;
-
-  // Exit early if unable to cast the spell or open inventory
-  if not (Magic.ClickSpell(Self.Spell) and WaitUntil(Inventory.IsOpen, 300, 5000)) then 
-    Exit;
-
-  Inc(castCount);
-  WriteLn('Cast attempt #', castCount);
 
   Wait(200, 500);
 
