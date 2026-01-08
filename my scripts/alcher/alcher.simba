@@ -8,7 +8,6 @@
 
 {$I types.simba}
 {$I config.simba}
-{$I alchemyhandler.simba}
 {$I helpers.simba}
 {$I actions.simba}
 {$I statemachine.simba}
