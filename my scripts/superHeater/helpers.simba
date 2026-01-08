@@ -50,7 +50,7 @@ begin
     end;
 
     // Simple left click if no option specified or uptext matches
-    if (option = '') or upText.Contains(option) then
+    if (option = '>') or upText.Contains(option) then
     begin
       Mouse.Click(MOUSE_LEFT);
       Exit(True);
@@ -77,7 +77,7 @@ begin
     end;
 
     // Simple left click if no option specified or uptext matches
-    if (option = '') or upText.Contains(option) then
+    if (option = '>') or upText.Contains(option) then
     begin
       Mouse.Click(MOUSE_LEFT);
       Exit(True);

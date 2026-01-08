@@ -27,7 +27,7 @@ begin
   // Press inventory item 7 while castCountfire is less than 5
   if Self.castCountfire < 9 then
   begin
-   if not (Inventory.ClickSlot(10, '') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
+   if not (Inventory.ClickSlot(10, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
     Exit;
     // WriteLn('Pressing inventory item 7 (castCountfire: ', Self.castCountfire, ')');
     // Inventory.MouseSlot(10);
@@ -40,7 +40,7 @@ begin
   // Exit early if unable to click primary ore
     if not Self.castCountfire < 9 then
   begin
-  if not (Inventory.ClickItem(PrimaryOre.Item, '') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
+  if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
     Exit;
   end;
 
