@@ -219,6 +219,10 @@ begin
   until Result or (Inc(attempt) > 2);
 end;
 
+// Global handler instance (declared before override functions that use it)
+var
+  RSAlchHandler: TRSAlchHandler;
+
 // Override Magic.FindSpell to track slot under spell
 function TRSMagic.FindSpell(spell: ERSSpell; out box: TBox; attempts: Int32 = 2): Boolean; override;
 var
@@ -277,10 +281,6 @@ begin
   end;
 end;
 
-// Global handler instance
-var
-  RSAlchHandler: TRSAlchHandler;
-
 // Setup handler on SRL initialization
 procedure TSRL.Setup(); override;
 begin
@@ -289,3 +289,4 @@ begin
 end;
 
 {$ENDIF}
+
