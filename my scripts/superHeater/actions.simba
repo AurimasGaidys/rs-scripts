@@ -31,9 +31,11 @@ begin
   if Self.castCountfire < 5 then
   begin
     WriteLn('Pressing inventory item 7 (castCountfire: ', Self.castCountfire, ')');
-    Inventory.ClickSlot(7);
-    Inc(Self.castCountfire);
+    Inventory.MouseSlot(6);
+    Mouse.Click(MOUSE_LEFT);
     Wait(200, 500);
+    Inc(Self.castCountfire);
+    Exit;
   end;
 
   // Exit early if unable to click primary ore
