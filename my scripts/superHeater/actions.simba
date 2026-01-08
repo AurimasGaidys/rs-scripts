@@ -21,10 +21,8 @@ begin
 
   // Exit early if unable to cast the spell or open inventory
   if not (Magic.ClickSpell(Self.Spell) and WaitUntil(Inventory.IsOpen, 300, 5000)) then Exit;
-
   Wait(200, 500);
 
-  // Press inventory item 7 while castCountfire is less than 5
   if Self.castCountfire < 9 then
   begin
    if not (Inventory.ClickSlot(10, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
@@ -37,12 +35,11 @@ begin
     // Exit;
   end;
 
-  // Exit early if unable to click primary ore
     if not Self.castCountfire < 9 then
-  begin
-  if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
-    Exit;
-  end;
+    begin
+      if not (Inventory.ClickItem(PrimaryOre.Item, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
+      Exit;
+    end;
 
   // Check for XP gain and decrement ItemCount if successful
   if WaitUntil(XPBar.EarnedXP(), 300, 5000) then
