@@ -22,20 +22,19 @@ begin
   // Exit early if unable to cast the spell or open inventory
   if not (Magic.ClickSpell(Self.Spell) and WaitUntil(Inventory.IsOpen, 300, 5000)) then Exit;
 
-  Inc(castCount);
-  WriteLn('The ', castCount);
-
   Wait(200, 500);
 
   // Press inventory item 7 while castCountfire is less than 5
   if Self.castCountfire < 9 then
   begin
-    WriteLn('Pressing inventory item 7 (castCountfire: ', Self.castCountfire, ')');
-    Inventory.MouseSlot(10);
-    Mouse.Click(MOUSE_LEFT);
-    Wait(200, 500);
-    Inc(Self.castCountfire);
+   if not (Inventory.ClickSlot(10, '>') and WaitUntil(Magic.IsOpen(), 300, 5000)) then 
     Exit;
+    // WriteLn('Pressing inventory item 7 (castCountfire: ', Self.castCountfire, ')');
+    // Inventory.MouseSlot(10);
+    // Mouse.Click(MOUSE_LEFT);
+    // Wait(200, 500);
+    // Inc(Self.castCountfire);
+    // Exit;
   end;
 
   // Exit early if unable to click primary ore
@@ -52,6 +51,7 @@ begin
     Self.SuperHeating := True;
     Self.SpellCastFailed := 0; // Reset the counter if successful
     Dec(ItemCount); // Decrement ItemCount on successful XP gain
+    Inc(Self.castCountfire);
     WriteLn('Successfully superheated item. Remaining: ', ItemCount);
   end;
 

@@ -82,6 +82,30 @@ begin
   end;
 end;
 
+function Inventory.ClickSlot(slotIndex: Int32; option: String = ''): Boolean; override;
+begin
+  if Inventory.MouseSlot(slotIndex) then
+  begin
+    upText := MainScreen.GetUpText();
+
+    // Cancel if we didn't want a menu but got one
+    if not option.Contains('>') and upText.Contains('>') then
+    begin
+      WriteLn('Context menu appeared unexpectedly - canceling');
+      Exit(ChooseOption.Select('Cancel'));
+    end;
+
+    // Simple left click if no option specified or uptext matches
+    if (option = '') or upText.Contains(option) then
+    begin
+      Mouse.Click(MOUSE_LEFT);
+      Exit(True);
+    end;
+
+    // Select from right-click menu
+    Result := ChooseOption.Select(option);
+  end;
+end;
 {******************************************************************************
  * TAntiban.Setup (Override)
  * 
