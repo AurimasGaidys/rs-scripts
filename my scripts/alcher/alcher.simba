@@ -1,3 +1,4 @@
+Unknown declaration "RSAlchHandler" at line 241, column 7 in file "C:\Users\linas\Desktop\Aurimo\rs-scripts\my scripts\alcher\alchemyhandler.simba"
 {$DEFINE SCRIPT_ID := 'f6fc217a-3b03-44e1-8fa7-662dfb48f6d7'}
 {$DEFINE SCRIPT_REVISION := '41'}
 {$IFNDEF SCRIPT_CHAIN}
