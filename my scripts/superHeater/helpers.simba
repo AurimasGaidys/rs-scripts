@@ -83,6 +83,8 @@ begin
 end;
 
 function Inventory.ClickSlot(slotIndex: Int32; option: String = ''): Boolean; override;
+var
+  upText: String;
 begin
   if Inventory.MouseSlot(slotIndex) then
   begin
