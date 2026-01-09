@@ -179,7 +179,7 @@ begin
     
     // Every 10th cast or if debugging, do safe mode (verify everything)
     // Otherwise, max efficiency mode (spam clicks)
-    if (Self.CastCount mod 10 = 0) or DebugState then
+    if (Self.CastCount mod 10 = 0) then
     begin
       if DebugState then
         Self.DebugLn('SelectItem: [SAFE MODE] Cast #' + ToStr(Self.CastCount) + ' - Full verification');
