@@ -140,7 +140,7 @@ begin
     begin
       if DebugState then
         Self.DebugLn('SelectSpell: Casting spell...');
-      Magic.CastSpell(spell);
+      Magic.ClickSpell(spell);
     end;
 
     Result := MainScreen.IsUpText(spellStr) or Inventory.IsOpen();
