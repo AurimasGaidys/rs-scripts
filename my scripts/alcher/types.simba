@@ -45,6 +45,7 @@ type
     ItemArray: TRSItemArray;
     Timer: TCountDown;
     SlotUnder, LowProfit, HighProfit, TotalProfit: Int32;
+    CastCount: Int32;  // Track number of casts for efficiency optimization
     Disabled: Boolean;
     Config: TConfigJSON;
   end;
