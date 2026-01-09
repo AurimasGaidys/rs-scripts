@@ -155,6 +155,7 @@ begin
     begin
       if (slot <> spellSlot) and (Inventory.Items.CountStack(slot) > 0) then
       begin
+      WriteLn('ERROR: DisableCastq');
         Self.DisableCast();
         if Inventory.Items.Move(slot, spellSlot) then
           Exit;
@@ -193,6 +194,7 @@ begin
     end
     else if ItemData.GetDefinitionBoolean(Self.Item, 'equipable') then
     begin
+      WriteLn('ERROR: DisableCastw');
       Self.DisableCast();
       if Equipment.FindItem(Self.Item, box) then
       begin
