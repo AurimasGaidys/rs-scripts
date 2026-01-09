@@ -228,7 +228,20 @@ begin
       end;
       
       // Direct click without verification
-      Inventory.ClickSlot(12);
+      if Inventory.MouseSlot(12) then
+      begin
+        Mouse.Click(MOUSE_LEFT);
+        
+        if WaitUntil(XPBar.EarnedXP() or Magic.IsOpen(), 300, 3000) then
+        begin
+          if DebugState then
+            Self.DebugLn('SelectItem: SUCCESS - Max efficiency alch complete!');
+          Self.Timer.Restart();
+          Self.AddProfit(hi);
+          Exit(True);
+        end;
+      end;
+       
       Self.Timer.Restart();
       Self.AddProfit(hi);
       
