@@ -11,5 +11,6 @@ var
   AlchSpell: ERSSpell := ERSSpell.HIGH_LEVEL_ALCHEMY;
   LossProtection: Boolean := True;
   WalkGE: Boolean := True;
+  DebugState: Boolean := True;  // Toggle state display on screen
 
 {$ENDIF}

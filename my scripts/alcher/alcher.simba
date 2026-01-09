@@ -42,6 +42,7 @@ type
     AlchSelector: TLabeledCombobox;
     IgnoreProfit: TLabeledCheckbox;
     WalkGECheckbox: TLabeledCheckbox;
+    DebugStateCheckbox: TLabeledCheckbox;
     CustomItemSelector: TLabeledEdit;
   end;
 
@@ -54,6 +55,7 @@ begin
 
   LossProtection := Self.IgnoreProfit.IsChecked();
   WalkGE := Self.WalkGECheckbox.IsChecked();
+  DebugState := Self.DebugStateCheckbox.IsChecked();
 
   inherited;
 end;
@@ -98,6 +100,15 @@ begin
     SetLeft(Self.IgnoreProfit.GetRight() + TControl.AdjustToDPI(20));
     SetTop(Self.IgnoreProfit.GetTop());
     SetChecked(WalkGE);
+  end;
+
+  with Self.DebugStateCheckbox do
+  begin
+    Create(tab);
+    SetCaption('Show State Debug (on screen)');
+    SetLeft(Self.AlchSelector.GetLeft());
+    SetTop(Self.AlchSelector.GetTop() + TControl.AdjustToDPI(50));
+    SetChecked(DebugState);
   end;
 
   Self.CreateAlchemyPanel();

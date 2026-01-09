@@ -16,52 +16,110 @@
   Contains state machine logic for determining bot states
 *)
 
+// Display current state on screen
+procedure TAlcher.DisplayState(state: EAlcherState);
+var
+  stateStr: String;
+  bitmap: TMufasaBitmap;
+begin
+  if not DebugState then
+    Exit;
+
+  stateStr := ToStr(state);
+  
+  bitmap.FromClient();
+  bitmap.DrawText('Current State: ' + stateStr, [10, 10], $FFFF00);
+  bitmap.DrawText('Timer Remaining: ' + ToStr(RSAlchHandler.Timer.TimeRemaining()) + 'ms', [10, 30], $FFFF00);
+  bitmap.DrawText('Total Actions: ' + ToStr(Self.TotalActions), [10, 50], $FFFF00);
+  bitmap.Debug();
+  bitmap.Free();
+end;
+
 // Determine the current state based on game conditions
 function TAlcher.GetState(): EAlcherState;
 begin
   if WL.Activity.IsFinished() then
-    Exit(EAlcherState.END_SCRIPT);
+  begin
+    Result := EAlcherState.END_SCRIPT;
+    Self.DisplayState(Result);
+    Exit;
+  end;
 
   if RSAlchHandler.Disabled then
-    Exit(EAlcherState.OUT_OF_ITEMS);
+  begin
+    Result := EAlcherState.OUT_OF_ITEMS;
+    Self.DisplayState(Result);
+    Exit;
+  end;
 
   if ChooseOption.IsOpen() then
-    Exit(EAlcherState.CLOSE_CONTEXT);
+  begin
+    Result := EAlcherState.CLOSE_CONTEXT;
+    Self.DisplayState(Result);
+    Exit;
+  end;
 
   if RSInterface.IsOpen() then
   begin
     if Bank.IsOpen() then
     begin
       if not Inventory.ContainsItem('Nature rune') then
-        Exit(EAlcherState.WITHDRAW_NATS);
+      begin
+        Result := EAlcherState.WITHDRAW_NATS;
+        Self.DisplayState(Result);
+        Exit;
+      end;
 
       if not Inventory.ContainsItem('Coins') then
-        Exit(EAlcherState.WITHDRAW_MONEY);
+      begin
+        Result := EAlcherState.WITHDRAW_MONEY;
+        Self.DisplayState(Result);
+        Exit;
+      end;
 
-      Exit(EAlcherState.CLOSE_INTERFACE);
+      Result := EAlcherState.CLOSE_INTERFACE;
+      Self.DisplayState(Result);
+      Exit;
     end;
 
     if CollectBox.IsOpen() then
     begin
       if Self.CollectEmpty then
-        Exit(EAlcherState.CLOSE_INTERFACE);
-      Exit(EAlcherState.HANDLE_COLLECT);
+      begin
+        Result := EAlcherState.CLOSE_INTERFACE;
+        Self.DisplayState(Result);
+        Exit;
+      end;
+      Result := EAlcherState.HANDLE_COLLECT;
+      Self.DisplayState(Result);
+      Exit;
     end;
 
-    Exit(EAlcherState.CLOSE_INTERFACE);
+    Result := EAlcherState.CLOSE_INTERFACE;
+    Self.DisplayState(Result);
+    Exit;
   end;
 
   if WalkGE and not Self.InGE then
   begin
     Self.InGE := Map.InRange(Self.GEObj.Coordinates, 30);
     if not Self.InGE then
-      Exit(EAlcherState.WALK_ALCH);
+    begin
+      Result := EAlcherState.WALK_ALCH;
+      Self.DisplayState(Result);
+      Exit;
+    end;
   end;
 
   if RSAlchHandler.Timer.TimeRemaining() >= Random(500, 1800) then
-    Exit(EAlcherState.WAIT_ALCH);
+  begin
+    Result := EAlcherState.WAIT_ALCH;
+    Self.DisplayState(Result);
+    Exit;
+  end;
 
   Result := EAlcherState.CAST_ALCHEMY;
+  Self.DisplayState(Result);
 end;
 
 {$ENDIF}
