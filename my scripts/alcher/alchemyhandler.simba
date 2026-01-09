@@ -155,7 +155,7 @@ begin
     begin
       if (slot <> spellSlot) and (Inventory.Items.CountStack(slot) > 0) then
       begin
-      WriteLn('ERROR: DisableCastq');
+        WriteLn('ERROR: DisableCastq');
         Self.DisableCast();
         if Inventory.Items.Move(slot, spellSlot) then
           Exit;

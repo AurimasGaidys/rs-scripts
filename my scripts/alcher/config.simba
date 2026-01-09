@@ -144,6 +144,14 @@ begin
   end;
 
   Self.LoadItems();
+  
+  // If loaded list is empty, add defaults
+  if Self.ItemArray = [] then
+  begin
+    Self.DebugLn('Loaded item list is empty! Adding default items...');
+    Self.AddDefault();
+    Self.SaveConfig();
+  end;
 end;
 
 {$ENDIF}
