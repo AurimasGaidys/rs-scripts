@@ -58,7 +58,7 @@ begin
       Exit(EAlcherState.WALK_ALCH);
   end;
 
-  if RSAlchHandler.Timer.TimeRemaining() >= Random(300, 1800) then
+  if RSAlchHandler.Timer.TimeRemaining() >= Random(500, 1800) then
     Exit(EAlcherState.WAIT_ALCH);
 
   Result := EAlcherState.CAST_ALCHEMY;
