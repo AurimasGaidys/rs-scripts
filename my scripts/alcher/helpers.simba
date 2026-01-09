@@ -29,12 +29,12 @@ procedure TAlcher.Init(maxActions: UInt32; maxTime: UInt64); override;
 begin
   inherited;
 
-  //if WalkGE then
-  //begin
-  //  Map.SetupChunk(ERSChunk.VARROCK);
-  //  Objects.Setup(Map.Objects(), @Map.Walker);
-  //  Self.GEObj := Objects.Get('Grand Exchange booth');
-  //end;
+  if WalkGE then
+  begin
+    Map.SetupChunk(ERSChunk.VARROCK);
+    Objects.Setup(Map.Objects(), @Map.Walker);
+    Self.GEObj := Objects.Get('Grand Exchange booth');
+  end;
 
   if not Magic.IsSpellBook(ERSSpellBook.STANDARD) then
     Self.Fatal('Not on Standard Spell Book');
