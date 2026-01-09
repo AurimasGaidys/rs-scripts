@@ -20,8 +20,18 @@ var
   match: TRSItemFinderMatch;
   itemStr: String;
 begin
+  if DebugState then
+    Self.DebugLn('GetAlchItem: Opening inventory and deselecting slots...');
+    
   if not Inventory.Open() and not Inventory.SetSelectedSlot(-1) then
+  begin
+    if DebugState then
+      Self.DebugLn('GetAlchItem: Failed to open inventory or deselect slot');
     Exit;
+  end;
+
+  if DebugState then
+    Self.DebugLn('GetAlchItem: Searching for items from alch list (Total items in list: ' + ToStr(Length(Self.ItemArray)) + ')');
 
   if not ItemFinder.Find(Self.ItemArray, Inventory.GetSlotBoxes(), match) then
   begin
@@ -38,6 +48,9 @@ begin
   itemStr := itemStr.After('noted ');
   Self.LowProfit  := ItemData.GetLowAlchProfit(itemStr);
   Self.HighProfit := ItemData.GetHighAlchProfit(itemStr);
+  
+  if DebugState then
+    Self.DebugLn('GetAlchItem: Low profit=' + ToStr(Self.LowProfit) + ', High profit=' + ToStr(Self.HighProfit));
 end;
 
 // Add profit to total
@@ -118,15 +131,28 @@ begin
   end;
 
   repeat
+    if DebugState then
+      Self.DebugLn('SelectSpell: Attempt ' + ToStr(attempt + 1) + ' - IsSelected: ' + ToStr(Magic.IsSelected(spell)) + ', InvOpen: ' + ToStr(Inventory.IsOpen()));
+    
     if not Magic.IsSelected(spell) or
        not GameTabs.FKeyOpen(ERSGameTab.INVENTORY)
     then
+    begin
+      if DebugState then
+        Self.DebugLn('SelectSpell: Casting spell...');
       Magic.CastSpell(spell);
+    end;
 
     Result := MainScreen.IsUpText(spellStr) or Inventory.IsOpen();
+    
+    if DebugState then
+      Self.DebugLn('SelectSpell: Result = ' + ToStr(Result) + ', UpText: ' + MainScreen.GetUpText());
   until Result or (Inc(attempt) > 3);
 
   Self.Disabled := not Result;
+  
+  if DebugState and not Result then
+    Self.DebugLn('SelectSpell: FAILED after ' + ToStr(attempt) + ' attempts');
 end;
 
 // Select the item to alch
@@ -142,48 +168,100 @@ begin
     Self.Timer.Length := 3 * 600;
 
   spellSlot := Self.SlotUnder;
+  
+  if DebugState then
+    Self.DebugLn('SelectItem: Starting - SpellSlot=' + ToStr(spellSlot) + ', Item=' + ToStr(Self.Item));
 
   for attempt := 0 to 2 do
   begin
+    if DebugState then
+      Self.DebugLn('SelectItem: Attempt ' + ToStr(attempt + 1));
+      
     if Self.Item.IsNull() then
+    begin
+      if DebugState then
+        Self.DebugLn('SelectItem: Item is null, getting alch item...');
       Self.Item := Self.GetAlchItem();
+    end;
 
     if Self.Item.IsNull() then
+    begin
+      if DebugState then
+        Self.DebugLn('SelectItem: FAILED - No alch item found!');
       Exit;
+    end;
 
     if Inventory.FindItem(Self.Item, slot) then
     begin
+      if DebugState then
+        Self.DebugLn('SelectItem: Found item in slot ' + ToStr(slot));
+        
       if (slot <> spellSlot) and (Inventory.Items.CountStack(slot) > 0) then
       begin
-        WriteLn('ERROR: DisableCastq');
+        if DebugState then
+          Self.DebugLn('SelectItem: Item not under spell, moving from slot ' + ToStr(slot) + ' to ' + ToStr(spellSlot));
         Self.DisableCast();
         if Inventory.Items.Move(slot, spellSlot) then
+        begin
+          if DebugState then
+            Self.DebugLn('SelectItem: Item moved successfully');
           Exit;
+        end;
         Break;
       end;
 
       if SRL.Dice(99.5) then
       begin
+        if DebugState then
+          Self.DebugLn('SelectItem: Mousing slot ' + ToStr(slot));
+          
         if not Inventory.MouseSlot(slot) and not MainScreen.IsUpText('>') then
+        begin
+          if DebugState then
+            Self.DebugLn('SelectItem: Failed to mouse slot');
           Exit;
+        end;
 
         if not waitTimer then
         begin
           if not Self.Timer.IsFinished() and (Self.Timer.Timeout > 0) then
+          begin
+            if DebugState then
+              Self.DebugLn('SelectItem: Timer not finished, waiting... (' + ToStr(Self.Timer.TimeRemaining()) + 'ms remaining)');
             Exit;
+          end;
         end else
+        begin
+          if DebugState then
+            Self.DebugLn('SelectItem: Waiting for timer to finish...');
           WaitUntil(Self.Timer.IsFinished(), 50, 3100);
+        end;
 
+        if DebugState then
+          Self.DebugLn('SelectItem: Clicking item...');
         Mouse.Click(MOUSE_LEFT);
 
+        if DebugState then
+          Self.DebugLn('SelectItem: Waiting for XP or Magic tab...');
+          
         if not WaitUntil(XPBar.EarnedXP() or Magic.IsOpen(), 300, 3000) then
+        begin
+          if DebugState then
+            Self.DebugLn('SelectItem: No XP gained - cast may have failed');
           Exit;
+        end;
 
+        if DebugState then
+          Self.DebugLn('SelectItem: SUCCESS - Alch cast complete!');
+          
         Self.Timer.Restart();
         Self.AddProfit(hi);
         Exit(True);
       end;
 
+      if DebugState then
+        Self.DebugLn('SelectItem: Dice roll failed (0.5%), clicking nearby empty slot');
+        
       slots := Inventory.GetEmptySlots();
       if slots <> [] then
       begin
@@ -194,17 +272,25 @@ begin
     end
     else if ItemData.GetDefinitionBoolean(Self.Item, 'equipable') then
     begin
-      WriteLn('ERROR: DisableCastw');
+      if DebugState then
+        Self.DebugLn('SelectItem: Item is equipable, checking equipment...');
       Self.DisableCast();
       if Equipment.FindItem(Self.Item, box) then
       begin
+        if DebugState then
+          Self.DebugLn('SelectItem: Found item in equipment, clicking to unequip');
         Mouse.Click(box, MOUSE_LEFT);
         Exit;
       end;
     end;
 
+    if DebugState then
+      Self.DebugLn('SelectItem: Resetting item to empty for next attempt');
     Self.Item := '';
   end;
+  
+  if DebugState then
+    Self.DebugLn('SelectItem: FAILED after all attempts');
 end;
 
 // Main alchemy casting function
@@ -212,14 +298,46 @@ function TRSAlchHandler.CastAlchemy(hi: Boolean = True; waitTimer: Boolean = Fal
 var
   attempt: Int32;
 begin
+  if DebugState then
+    Self.DebugLn('========================================');
+  if DebugState then
+    Self.DebugLn('CastAlchemy: Starting - High=' + ToStr(hi) + ', WaitTimer=' + ToStr(waitTimer));
+    
   XPBar.EarnedXP(); //Update cached XP.
 
   repeat
+    if DebugState then
+      Self.DebugLn('CastAlchemy: Main loop attempt ' + ToStr(attempt + 1));
+      
+    if DebugState then
+      Self.DebugLn('CastAlchemy: Calling SelectSpell...');
+      
     if not Self.SelectSpell(hi) then
+    begin
+      if DebugState then
+        Self.DebugLn('CastAlchemy: SelectSpell FAILED - Exiting');
       Exit;
+    end;
+    
+    if DebugState then
+      Self.DebugLn('CastAlchemy: SelectSpell SUCCESS - Calling SelectItem...');
+      
     Result := Self.SelectItem(hi, waitTimer);
+    
+    if DebugState then
+      Self.DebugLn('CastAlchemy: SelectItem returned ' + ToStr(Result));
+      
     TRSWalkerObject.RedClicked := False; //Integration with other wasplib components.
   until Result or (Inc(attempt) > 2);
+  
+  if DebugState then
+  begin
+    if Result then
+      Self.DebugLn('CastAlchemy: COMPLETE - SUCCESS!')
+    else
+      Self.DebugLn('CastAlchemy: COMPLETE - FAILED after ' + ToStr(attempt) + ' attempts');
+    Self.DebugLn('========================================');
+  end;
 end;
 
 // Global handler instance (declared before override functions that use it)
