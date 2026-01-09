@@ -79,14 +79,15 @@ function TRSAlchHandler.DisableCast(): Boolean;
 var
   i, attempt: Int32;
 begin
-  if Inventory.Count() < 28 then
-    i := SRL.TruncatedGauss(0, 5)
-  else
-    i := SRL.TruncatedGauss(3, 5);
-
   repeat
     if Inc(attempt) > 10 then
       Self.Fatal('Cannot disable the alchemy spell!');
+
+    // Randomize method on each iteration
+    if Inventory.Count() < 28 then
+      i := SRL.TruncatedGauss(0, 5)
+    else
+      i := SRL.TruncatedGauss(3, 5);
 
     case i of
       0..2: Self.ClickEmptySlot();
