@@ -172,6 +172,54 @@ begin
   if DebugState then
     Self.DebugLn('SelectItem: Starting - SpellSlot=' + ToStr(spellSlot) + ', Item=' + ToStr(Self.Item));
 
+  // Quick check: if slot 12 has an item, just click it
+  if Inventory.Items.CountStack(12) > 0 then
+  begin
+    if DebugState then
+      Self.DebugLn('SelectItem: Found item in slot 12 (under spell), clicking directly...');
+      
+    if not waitTimer then
+    begin
+      if not Self.Timer.IsFinished() and (Self.Timer.Timeout > 0) then
+      begin
+        if DebugState then
+          Self.DebugLn('SelectItem: Timer not finished, waiting... (' + ToStr(Self.Timer.TimeRemaining()) + 'ms remaining)');
+        Exit;
+      end;
+    end else
+    begin
+      if DebugState then
+        Self.DebugLn('SelectItem: Waiting for timer to finish...');
+      WaitUntil(Self.Timer.IsFinished(), 50, 3100);
+    end;
+    
+    if DebugState then
+      Self.DebugLn('SelectItem: Mousing and clicking slot 12...');
+      
+    if Inventory.MouseSlot(12) then
+    begin
+      Mouse.Click(MOUSE_LEFT);
+      
+      if DebugState then
+        Self.DebugLn('SelectItem: Waiting for XP or Magic tab...');
+        
+      if WaitUntil(XPBar.EarnedXP() or Magic.IsOpen(), 300, 3000) then
+      begin
+        if DebugState then
+          Self.DebugLn('SelectItem: SUCCESS - Quick alch complete!');
+        Self.Timer.Restart();
+        Self.AddProfit(hi);
+        Exit(True);
+      end
+      else if DebugState then
+        Self.DebugLn('SelectItem: No XP gained from slot 12 click');
+    end;
+  end;
+
+  // Original logic if slot 12 doesn't work or doesn't have an item
+  if DebugState then
+    Self.DebugLn('SelectItem: Using full item search logic...');
+
   for attempt := 0 to 2 do
   begin
     if DebugState then
