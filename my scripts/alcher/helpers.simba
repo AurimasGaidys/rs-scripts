@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_HELPERS_INCLUDED}
 {$DEFINE WL_ALCHER_HELPERS_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -40,3 +42,5 @@ begin
   Self.NatureRune := TRSBankItem.Setup('Nature rune', Bank.QUANTITY_ALL, False);
   Self.Coins := TRSBankItem.Setup('Coins', Bank.QUANTITY_ALL, False);
 end;
+
+{$ENDIF}

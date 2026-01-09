@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_STATEMACHINE_INCLUDED}
 {$DEFINE WL_ALCHER_STATEMACHINE_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -61,3 +63,5 @@ begin
 
   Result := EAlcherState.CAST_ALCHEMY;
 end;
+
+{$ENDIF}

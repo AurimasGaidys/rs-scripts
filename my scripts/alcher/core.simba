@@ -1,4 +1,6 @@
+{$IFNDEF WL_ALCHER_CORE_INCLUDED}
 {$DEFINE WL_ALCHER_CORE_INCLUDED}
+
 {$IFNDEF WL_OSR}
   {$I WaspLib/osr.simba}
 {$ENDIF}
@@ -50,3 +52,5 @@ begin
   if not Self.Terminate() then
     Self.Fatal('Didn''t terminate properly. Stopping execution.');
 end;
+
+{$ENDIF}
