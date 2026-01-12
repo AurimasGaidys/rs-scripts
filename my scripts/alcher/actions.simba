@@ -29,7 +29,7 @@ begin
   if Magic.ClickSpell(AlchSpell) and ChooseOption.IsOpen() then
     ChooseOption.Select('Warnings');
 
-  WaitUntil(Chat.HasContinue(), 50, 2000);
+  WaitUntil(Chat.HasContinue(), 50, 1000);
   Chat.ClickContinue();
   WaitUntil(Chat.ClickOption('Set value', False), 50, 3000);
   Wait(2000);
